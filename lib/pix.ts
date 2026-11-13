@@ -1,0 +1,148 @@
+import "server-only";
+import { connection } from "next/server";
+
+/* Read-only access to the Pixie CMS database (Supabase project "PixAgent").
+ * pix_posts has no anon read policy, so this needs the service-role key —
+ * which is why it lives in server-only code and is never prefixed NEXT_PUBLIC_. */
+
+export type PixPostSummary = {
+  id: string;
+  headline: string;
+  category: string | null;
+  published_at: string | null;
+  source_url: string | null;
+  image: string | null;
+};
+
+export type PixPost = PixPostSummary & {
+  body: string;
+  source_title: string; // the original article's headline, as scraped
+  source_text: string;
+  cards: string[]; // finished PIX card images (poster + text slides), in order
+};
+
+type WebPage = { url?: string; sort_order?: number };
+
+type PixRow = {
+  id: string;
+  headline: string | null;
+  ai_headline: string | null;
+  scraped_title: string | null;
+  detail_body?: string | null;
+  summary?: string | null;
+  article_text?: string | null;
+  category: string | null;
+  tag: string | null;
+  published_at: string | null;
+  created_at: string | null;
+  source_url: string | null;
+  main_image_url: string | null;
+  source_image_url: string | null;
+  web_pages: WebPage[] | null;
+};
+
+export function pixConfigured(): boolean {
+  return Boolean(process.env.PIX_SUPABASE_URL && process.env.PIX_SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function pixFetch<T>(path: string, init?: { count?: boolean }): Promise<{ data: T; total: number | null }> {
+  if (!pixConfigured()) {
+    throw new Error("PIX_SUPABASE_URL / PIX_SUPABASE_SERVICE_ROLE_KEY are not set in .env");
+  }
+  // PIX news is live data: always read it at request time. Without this, Cache
+  // Components tries to prerender and trips over AbortSignal.timeout's clock read.
+  await connection();
+  const key = process.env.PIX_SUPABASE_SERVICE_ROLE_KEY!;
+  const res = await fetch(`${process.env.PIX_SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      ...(init?.count ? { Prefer: "count=exact" } : {}),
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`PIX database error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  // Content-Range: "0-11/9390"
+  const total = Number(res.headers.get("content-range")?.split("/")[1]);
+  return { data: (await res.json()) as T, total: Number.isFinite(total) ? total : null };
+}
+
+// PIX headlines wrap highlighted words in [brackets] for the card design.
+const stripMarkers = (s: string) => s.replace(/[[\]]/g, "").replace(/\s+/g, " ").trim();
+
+const headlineOf = (r: PixRow) => stripMarkers(r.headline || r.ai_headline || r.scraped_title || "(untitled)");
+
+const cardsOf = (r: PixRow) =>
+  (Array.isArray(r.web_pages) ? r.web_pages : [])
+    .filter((p): p is Required<Pick<WebPage, "url">> & WebPage => typeof p?.url === "string")
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((p) => p.url);
+
+const isHttp = (u: string | null | undefined): u is string => !!u && /^https?:\/\//i.test(u);
+
+const imageOf = (r: PixRow) =>
+  [r.main_image_url, cardsOf(r)[0], r.source_image_url].find(isHttp) ?? null;
+
+const toSummary = (r: PixRow): PixPostSummary => ({
+  id: r.id,
+  headline: headlineOf(r),
+  // PIX stores the literal text "none" for posts without a category.
+  category: [r.category, r.tag].find((c) => c && c.trim() && c.trim().toLowerCase() !== "none")?.trim() ?? null,
+  published_at: r.published_at ?? r.created_at,
+  source_url: r.source_url,
+  image: imageOf(r),
+});
+
+const LIST_COLS =
+  "id,headline,ai_headline,scraped_title,category,tag,published_at,created_at,source_url,main_image_url,source_image_url,web_pages";
+
+const searchTerm = (q: string) => q.trim().replace(/[*,()%\\]/g, " ").replace(/\s+/g, " ").slice(0, 80);
+
+/** One page of published PIX posts, newest first, with the total count. */
+export async function listPixPage(opts: { page: number; pageSize: number; query?: string }) {
+  const page = Math.max(1, Math.floor(opts.page) || 1);
+  const params = new URLSearchParams({
+    select: LIST_COLS,
+    published_id: "not.is.null",
+    order: "published_at.desc.nullslast,created_at.desc",
+    limit: String(opts.pageSize),
+    offset: String((page - 1) * opts.pageSize),
+  });
+  const q = searchTerm(opts.query ?? "");
+  if (q) params.set("or", `(headline.ilike.*${q}*,ai_headline.ilike.*${q}*)`);
+  const { data, total } = await pixFetch<PixRow[]>(`pix_posts?${params}`, { count: true });
+  const count = total ?? data.length;
+  return {
+    posts: data.map(toSummary),
+    total: count,
+    page,
+    pageCount: Math.max(1, Math.ceil(count / opts.pageSize)),
+  };
+}
+
+/** Latest published PIX posts (used by the JSON API). */
+export async function listPixPosts(query: string, limit = 30): Promise<PixPostSummary[]> {
+  return (await listPixPage({ page: 1, pageSize: limit, query })).posts;
+}
+
+export async function getPixPost(id: string): Promise<PixPost | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const params = new URLSearchParams({
+    select: `${LIST_COLS},detail_body,summary,article_text`,
+    id: `eq.${id}`,
+    limit: "1",
+  });
+  const {
+    data: [row],
+  } = await pixFetch<PixRow[]>(`pix_posts?${params}`);
+  if (!row) return null;
+  return {
+    ...toSummary(row),
+    // Same [highlight] markers as headlines; keep line breaks for paragraphs.
+    body: (row.detail_body || row.summary || "").replace(/[[\]]/g, "").trim(),
+    source_title: (row.scraped_title || "").trim(),
+    source_text: (row.article_text || "").trim(),
+    cards: cardsOf(row),
+  };
+}

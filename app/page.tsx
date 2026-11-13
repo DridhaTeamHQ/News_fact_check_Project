@@ -1,69 +1,122 @@
-import Image from "next/image";
+import { Suspense } from "react";
+import Link from "next/link";
+import { Search } from "lucide-react";
+import { Pagination } from "@/components/pagination";
+import { PixImage } from "@/components/pix-image";
+import { listPixPage, pixConfigured } from "@/lib/pix";
 
-export default function Home() {
+const PAGE_SIZE = 12;
+
+export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:py-10">
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">PIX news</h1>
+      <p className="mt-1 text-muted-foreground">Open any PIX to check whether it&apos;s true, with its fact score and sources.</p>
+      <Suspense fallback={<GridSkeleton />}>
+        <PixGrid searchParams={searchParams} />
+      </Suspense>
+    </main>
+  );
+}
+
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+
+const fmtDay = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "";
+
+async function PixGrid({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
+  const sp = await searchParams;
+  const q = first(sp.q).trim();
+  const page = Math.max(1, Number.parseInt(first(sp.page), 10) || 1);
+
+  if (!pixConfigured()) {
+    return <Notice>PIX database is not connected. Add PIX_SUPABASE_URL and PIX_SUPABASE_SERVICE_ROLE_KEY to .env.</Notice>;
+  }
+
+  let data: Awaited<ReturnType<typeof listPixPage>>;
+  try {
+    data = await listPixPage({ page, pageSize: PAGE_SIZE, query: q });
+  } catch (err) {
+    return <Notice>{(err as Error).message}</Notice>;
+  }
+
+  const href = (p: number) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (p > 1) params.set("page", String(p));
+    const s = params.toString();
+    return s ? `/?${s}` : "/";
+  };
+
+  return (
+    <>
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <form action="/" className="relative w-full sm:max-w-md">
+          <label htmlFor="q" className="sr-only">
+            Search PIX headlines
+          </label>
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            id="q"
+            name="q"
+            defaultValue={q}
+            placeholder="Search PIX headlines…"
+            className="h-10 w-full rounded-lg border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </form>
+        <p className="text-sm text-muted-foreground tabular-nums">
+          {data.total.toLocaleString("en-IN")} {q ? `results for “${q}”` : "published PIX"} · page {data.page} of{" "}
+          {data.pageCount.toLocaleString("en-IN")}
+        </p>
+      </div>
+
+      {data.posts.length === 0 ? (
+        <Notice>{q ? `No PIX match “${q}”.` : "No published PIX yet."}</Notice>
+      ) : (
+        <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {data.posts.map((p, i) => (
+            <li key={p.id}>
+              <Link
+                href={`/pix/${p.id}`}
+                className="group flex h-full flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <PixImage src={p.image} alt="" eager={i < 3} className="aspect-[4/3] w-full" />
+                <div className="flex flex-1 flex-col p-4">
+                  {p.category && (
+                    <span className="text-xs font-semibold tracking-wide text-primary uppercase">{p.category}</span>
+                  )}
+                  <h2 className="mt-1 line-clamp-3 font-semibold leading-snug group-hover:underline">{p.headline}</h2>
+                  <div className="mt-auto pt-3 text-xs text-muted-foreground">{fmtDay(p.published_at)}</div>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-8">
+        <Pagination page={data.page} pageCount={data.pageCount} href={href} />
+      </div>
+    </>
+  );
+}
+
+function Notice({ children }: { children: React.ReactNode }) {
+  return <div className="mt-6 rounded-xl border bg-muted/40 p-6 text-sm text-muted-foreground">{children}</div>;
+}
+
+function GridSkeleton() {
+  return (
+    <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3" aria-hidden>
+      {Array.from({ length: 6 }, (_, i) => (
+        <li key={i} className="overflow-hidden rounded-xl border bg-card">
+          <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
+          <div className="space-y-2 p-4">
+            <div className="h-4 w-11/12 animate-pulse rounded bg-muted" />
+            <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
