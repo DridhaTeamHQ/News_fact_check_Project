@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import type { ClaimVerdict, FactCheckReport, FactLabel } from "@/lib/factcheck";
 import { cn } from "@/lib/utils";
+import { VerdictBanner } from "@/components/verdict";
 
 /* ---------- visual vocab (Shortly's labels and bands) ---------- */
 
@@ -42,13 +43,25 @@ const CLAIM_STYLE: Record<ClaimVerdict, { label: string; cls: string }> = {
   contradicted: { label: "Contradicted", cls: "bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200" },
 };
 
+const FACT_CHECK_SAYS: Record<FactCheckReport["factChecks"][number]["storyIs"], string> = {
+  false: "shows this news is false",
+  misleading: "shows this news is misleading",
+  true: "agrees with this news",
+  unclear: "doesn't settle it",
+};
+
 const SIGNALS: { key: "attribution" | "specificity" | "tone"; label: string }[] = [
   { key: "attribution", label: "Attribution" },
   { key: "specificity", label: "Specificity" },
   { key: "tone", label: "Tone" },
 ];
 
-const STEPS = ["Reading the original article…", "Finding other outlets in Shortly's feeds…", "Checking every claim…"];
+const STEPS = [
+  "Reading the original article…",
+  "Finding other outlets and fact-checkers…",
+  "Checking every claim…",
+  "Searching the news for unconfirmed claims…",
+];
 
 export const fmtDate = (iso: string | null | undefined) => {
   if (!iso) return "";
@@ -108,7 +121,7 @@ export function FactCheckProgress({ step }: { step: number }) {
       <Loader2 className="size-5 animate-spin text-primary" />
       <div>
         <div className="font-medium">{STEPS[step]}</div>
-        <div className="text-sm text-muted-foreground">Usually takes 5–20 seconds.</div>
+        <div className="text-sm text-muted-foreground">Usually takes 15–30 seconds.</div>
       </div>
     </div>
   );
@@ -136,6 +149,41 @@ export function FactReport({ report }: { report: FactCheckReport }) {
 
   return (
     <div className="space-y-6">
+      {report.verdict && <VerdictBanner verdict={report.verdict} />}
+
+      {(report.pageReviews?.length > 0 || report.factChecks?.length > 0) && (
+        <section className="rounded-xl border bg-card p-5 sm:p-6">
+          <div className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Fact-checkers</div>
+          <ul className="mt-3 space-y-3">
+            {report.pageReviews.map((r, i) => (
+              <li key={`page-${i}`} className="text-[15px]">
+                <span className="font-semibold">{r.by}</span> rated the claim &ldquo;{r.claim}&rdquo;:{" "}
+                <span className="font-semibold">{r.rating}</span>
+              </li>
+            ))}
+            {report.factChecks.map((f) => (
+              <li key={f.url} className="text-[15px]">
+                <a
+                  href={f.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-start gap-1 font-semibold hover:underline"
+                >
+                  {f.title} <ExternalLink className="mt-1 size-3.5 shrink-0" />
+                </a>
+                <div className="text-sm text-muted-foreground">
+                  {f.by}
+                  {f.rating && ` · rated “${f.rating}”`}
+                  {f.claim && ` · claim checked: “${f.claim}”`}
+                  {" · "}
+                  {FACT_CHECK_SAYS[f.storyIs]}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="rounded-xl border bg-muted/40 p-5 sm:p-6">
         <div className="flex items-center gap-4">
           <div
@@ -148,7 +196,7 @@ export function FactReport({ report }: { report: FactCheckReport }) {
             {report.scored ? report.score : "–"}
           </div>
           <div className="min-w-0">
-            <div className={cn("text-sm font-bold tracking-wide uppercase", theme.text)}>{theme.word} · AI fact check</div>
+            <div className={cn("text-sm font-bold tracking-wide uppercase", theme.text)}>Fact score · {theme.word}</div>
             <div className="mt-0.5 text-sm text-muted-foreground">
               {n > 0
                 ? `Claims checked across ${n} independent source${n === 1 ? "" : "s"} · ${fmtDate(report.checked_at)}.`
@@ -179,7 +227,14 @@ export function FactReport({ report }: { report: FactCheckReport }) {
                     return (
                       <li key={i} className="flex items-start gap-3 rounded-lg border bg-background p-3">
                         <span className={cn("mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", v.cls)}>{v.label}</span>
-                        <span className="text-sm">{c.claim}</span>
+                        <span className="min-w-0 text-sm">
+                          {c.claim}
+                          {c.evidence && (
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              {c.verdict === "contradicted" ? "Sources say" : "Source"}: &ldquo;{c.evidence}&rdquo;
+                            </span>
+                          )}
+                        </span>
                       </li>
                     );
                   })}
@@ -267,9 +322,10 @@ export function FactReport({ report }: { report: FactCheckReport }) {
       )}
 
       <p className="text-xs text-muted-foreground">
-        Shortly fact-check method ({report.method}, {report.model}): our story is checked claim by claim against the original
-        article and other outlets from Shortly&apos;s feeds. Score = 70% claim grounding + 30% source credibility; any
-        contradicted claim caps it at 45.
+        Method ({report.method}, {report.model}): every claim in our story is checked against the original article and
+        other outlets, and claims not found at first are searched for in the news. The score is the share of claims the
+        sources confirm, scaled by source quality. Any contradicted claim caps it at 45; if more than 1 in 10 claims
+        appear in no source, it can&apos;t reach Verified.
       </p>
     </div>
   );

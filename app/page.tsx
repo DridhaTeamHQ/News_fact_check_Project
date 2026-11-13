@@ -1,9 +1,20 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { Search } from "lucide-react";
 import { Pagination } from "@/components/pagination";
-import { PixImage } from "@/components/pix-image";
+import { PixList } from "@/components/pix-list";
+import { getCachedCheck } from "@/lib/check-cache";
 import { listPixPage, pixConfigured } from "@/lib/pix";
+import type { VerdictLabel } from "@/lib/verdict";
+
+/** Verdicts of PIX already checked in the last 6 hours. */
+function savedVerdicts(ids: string[]): Record<string, VerdictLabel> {
+  const out: Record<string, VerdictLabel> = {};
+  for (const id of ids) {
+    const label = getCachedCheck(id)?.verdict?.label;
+    if (label) out[id] = label;
+  }
+  return out;
+}
 
 const PAGE_SIZE = 12;
 
@@ -11,7 +22,7 @@ export default function Home({ searchParams }: PageProps<"/">) {
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:py-10">
       <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">PIX news</h1>
-      <p className="mt-1 text-muted-foreground">Open any PIX to check whether it&apos;s true, with its fact score and sources.</p>
+      <p className="mt-1 text-muted-foreground">See whether each PIX is true or false. Open one for its full check, or check every story on a page at once.</p>
       <Suspense fallback={<GridSkeleton />}>
         <PixGrid searchParams={searchParams} />
       </Suspense>
@@ -20,9 +31,6 @@ export default function Home({ searchParams }: PageProps<"/">) {
 }
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
-
-const fmtDay = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "";
 
 async function PixGrid({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
   const sp = await searchParams;
@@ -73,25 +81,7 @@ async function PixGrid({ searchParams }: { searchParams: PageProps<"/">["searchP
       {data.posts.length === 0 ? (
         <Notice>{q ? `No PIX match “${q}”.` : "No published PIX yet."}</Notice>
       ) : (
-        <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {data.posts.map((p, i) => (
-            <li key={p.id}>
-              <Link
-                href={`/pix/${p.id}`}
-                className="group flex h-full flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <PixImage src={p.image} alt="" eager={i < 3} className="aspect-[4/3] w-full" />
-                <div className="flex flex-1 flex-col p-4">
-                  {p.category && (
-                    <span className="text-xs font-semibold tracking-wide text-primary uppercase">{p.category}</span>
-                  )}
-                  <h2 className="mt-1 line-clamp-3 font-semibold leading-snug group-hover:underline">{p.headline}</h2>
-                  <div className="mt-auto pt-3 text-xs text-muted-foreground">{fmtDay(p.published_at)}</div>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <PixList key={`${q}|${data.page}`} posts={data.posts} verdicts={savedVerdicts(data.posts.map((p) => p.id))} />
       )}
 
       <div className="mt-8">

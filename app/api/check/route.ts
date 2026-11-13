@@ -1,17 +1,17 @@
-import { openaiConfigured, runFactCheck, type FactCheckReport, type NewsInput } from "@/lib/factcheck";
+import { getCachedCheck, setCachedCheck } from "@/lib/check-cache";
+import { openaiConfigured, runFactCheck, type NewsInput } from "@/lib/factcheck";
 import { fetchArticle, isHttpUrl, looksLikeBoilerplate } from "@/lib/fetch-article";
 import { getPixPost, getPixPostByPublishedId, publishedIdFromDailyMattrUrl, type PixPost } from "@/lib/pix";
 
-// Reading the articles + news search + one gpt-4o-mini call: usually 5–20 s.
+// Reading the articles + news searches + three or four model calls (event
+// queries, extract claims, verify, second look): usually 15–30 s.
 export const maxDuration = 60;
 
 /** Either a PIX id (PIX pages) or a news link (the "Check a news link" page). */
 type CheckBody = { pixId?: string; url?: string; force?: boolean };
 
 /* Reopening a PIX should not re-run the check every time. Results are kept in
- * memory per server process for 6 hours; "Re-check" sends force=true. */
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const pixCache = new Map<string, { at: number; report: FactCheckReport }>();
+ * memory for 6 hours (lib/check-cache.ts); "Re-check" sends force=true. */
 
 const fromPix = (post: PixPost): NewsInput => ({
   headline: post.headline,
@@ -56,10 +56,9 @@ export async function POST(request: Request) {
     }
 
     if (post) {
-      const hit = pixCache.get(post.id);
-      if (hit && !body.force && Date.now() - hit.at < CACHE_TTL_MS) {
-        return Response.json({ ...hit.report, cached: true });
-      }
+      const hit = body.force ? null : getCachedCheck(post.id);
+      // Saved before verdicts existed: check again rather than show none.
+      if (hit?.verdict) return Response.json({ ...hit, cached: true });
       news = fromPix(post);
     } else {
       // Any other news link: that article is the story; other outlets that
@@ -75,6 +74,7 @@ export async function POST(request: Request) {
         sourceText: "",
         storyUrl: url,
         publishedAt: article.published,
+        pageReviews: article.claimReviews,
       };
     }
   } catch (err) {
@@ -85,10 +85,7 @@ export async function POST(request: Request) {
 
   try {
     const report = await runFactCheck(news);
-    if (news.pixId) {
-      pixCache.set(news.pixId, { at: Date.now(), report });
-      if (pixCache.size > 500) pixCache.delete(pixCache.keys().next().value!);
-    }
+    if (news.pixId) setCachedCheck(news.pixId, report);
     return Response.json(report);
   } catch (err) {
     console.error("[fact-check]", err);

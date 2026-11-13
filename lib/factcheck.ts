@@ -1,13 +1,26 @@
 import "server-only";
-import { fetchArticle, looksLikeBoilerplate } from "./fetch-article";
+import { fetchArticle, looksLikeBoilerplate, type ClaimReview } from "./fetch-article";
+import { findFactChecks, type FoundFactCheck } from "./fact-checks";
+import { decideVerdict, type Verdict } from "./verdict";
 import {
+  extractClaims,
   factCheckArticle,
   factCheckEnabled,
   factCheckModel,
+  MAX_SOURCE_CHARS,
   type ClaimVerdict,
   type FactCheckResult,
 } from "./shortly/fact-check";
-import { findOutletsCovering, outletKey, searchQueriesFor, type FoundArticle, type SearchStats } from "./news-search";
+import {
+  articleReader,
+  findCoverageForClaims,
+  findOutletsCovering,
+  outletKey,
+  passagesFor,
+  searchQueriesFor,
+  type FoundArticle,
+  type SearchStats,
+} from "./news-search";
 import { findRelatedSources, significantTokens, type RelatedSource } from "./shortly/related-sources";
 
 /** At least 2 significant words in common (Shortly's token rule). */
@@ -19,18 +32,25 @@ function sharesKeyWords(a: string, b: string): boolean {
 /** Other outlets (besides the original) to find, show and check against. */
 const MAX_OTHER_OUTLETS = 10;
 
-/* Fact check for PIX (and pasted news), using Shortly-email-agent's own
- * fact-check code in lib/shortly/ — the same prompt, model (gpt-4o-mini) and
- * scoring as the Shortly newsletter:
+/** When the original can't be read, other outlets' full articles stand in for
+ * it: this many outlets, this many characters each (fits MAX_SOURCE_CHARS). */
+const FALLBACK_OUTLETS = 4;
+const FALLBACK_CHARS = 2200;
+
+/* Fact check for PIX (and pasted news). The checker in lib/shortly/fact-check.ts
+ * began as Shortly-email-agent's and is now stricter (see that file):
  *
- *   SUMMARY  = our story (PIX headline + text), so a wrong headline is caught
- *   SOURCE   = the original article's headline + body (Shortly fetches the full
- *              readable body when the stored text is thin; so do we)
- *   CORROBORATION = up to 4 other outlets on the same story from Shortly's
- *              scrape pool (embedding match, token-overlap fallback)
+ *   STORY    = our story (PIX headline + text), so a wrong headline is caught
+ *   SOURCE   = the original article's headline + body (fetched in full when the
+ *              stored text is thin)
+ *   CORROBORATION = up to 10 other outlets on the same story, from Shortly's
+ *              scrape pool and Bing/Google News
  *
- * Score = 70% claim grounding + 30% credibility signals, computed in code; a
- * contradicted claim caps it at 45. Labels: verified ≥85, mostly-factual ≥65,
+ * Claims are extracted from the story alone, then each is graded against the
+ * evidence; claims still unconfirmed are searched for in the news one by one and
+ * graded again. Score = average claim credit x (80 + 20 x source quality),
+ * computed in code; a contradicted claim caps it at 45, and more than 1 in 10
+ * claims found in no source caps it at 84. Labels: verified ≥85, mostly-factual ≥65,
  * mixed ≥40, unverified <40. */
 
 export type { ClaimVerdict };
@@ -45,6 +65,8 @@ export type NewsInput = {
   storyUrl?: string | null; // where our story itself is published; its outlet is never used as evidence
   publishedAt?: string | null;
   pixId?: string | null;
+  // Fact-checker ratings published on the story's own page (it is a fact-check).
+  pageReviews?: ClaimReview[];
 };
 
 export type ReportSource = {
@@ -64,7 +86,7 @@ export type FactCheckReport = {
   score: number | null;
   label: FactLabel | null;
   rationale: string;
-  claims: { claim: string; verdict: ClaimVerdict }[];
+  claims: { claim: string; verdict: ClaimVerdict; evidence?: string }[]; // evidence = the source's own words
   signals: { attribution: number; specificity: number; tone: number } | null;
   sources: ReportSource[]; // primary first, then other outlets
   note: string | null; // how the evidence was gathered, or why it's unscored
@@ -73,6 +95,12 @@ export type FactCheckReport = {
   method: string;
   duration_ms: number;
   search: { queries: string[]; fromShortly: number; fetched: number; matched: number } | null;
+  // The plain answer: true, mostly true, partly false, false or unverified.
+  verdict: Verdict;
+  // Fact-checks of this story found by searching fact-checkers.
+  factChecks: FoundFactCheck[];
+  // When the checked page is itself a fact-check: the claims it rates.
+  pageReviews: { claim: string; rating: string; by: string }[];
 };
 
 export const openaiConfigured = () => Boolean(process.env.OPENAI_API_KEY);
@@ -164,7 +192,7 @@ const unscored = (
   sources: ReportSource[],
   note: string,
   search: FactCheckReport["search"] = null,
-): FactCheckReport => ({
+): Omit<FactCheckReport, "verdict" | "factChecks" | "pageReviews"> => ({
   search,
   headline: news.headline,
   pixId: news.pixId ?? null,
@@ -178,7 +206,7 @@ const unscored = (
   note,
   checked_at: new Date().toISOString(),
   model: factCheckModel(),
-  method: "source-grounding-v1",
+  method: "source-grounding-v2",
   duration_ms: Date.now() - started,
 });
 
@@ -189,9 +217,45 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
   const started = Date.now();
   const notes: string[] = [];
 
+  // The story's claims don't depend on the evidence: extract them while the
+  // evidence is gathered. (factCheckArticle awaits this and reports its error.)
+  const story = `${news.headline}\n\n${news.summary}`.trim();
+  const claims = extractClaims(apiKey, story);
+  claims.catch(() => {});
+  // Every article read during this check, each read once; full texts are kept
+  // so the second look can quote the sentences about each unconfirmed claim.
+  const read = articleReader();
+  const fullTexts: { source: string; url: string; title: string; text: string }[] = [];
+
+  // Has a fact-checker already checked this story? Runs alongside everything else.
+  const factChecks = findFactChecks(
+    apiKey,
+    { headline: news.headline, text: news.summary, publishedAt: news.publishedAt },
+    { read, excludeUrls: [news.storyUrl ?? ""] },
+  );
+  const pageReviews = (news.pageReviews ?? []).map((r) => ({
+    claim: r.claim,
+    rating: r.rating,
+    by: r.by ?? (news.storyUrl ? outletName(news.storyUrl) : "A fact-checker"),
+  }));
+  /** Adds the verdict (and the fact-checks behind it) to a finished report. */
+  const finish = async (report: Omit<FactCheckReport, "verdict" | "factChecks" | "pageReviews">): Promise<FactCheckReport> => {
+    const found = await factChecks;
+    const verdict = decideVerdict({
+      scored: report.scored,
+      score: report.score,
+      claims: report.claims,
+      pageReviews,
+      factChecks: found,
+      outlets: report.sources.filter((s) => !s.primary).length,
+    });
+    return { ...report, verdict, factChecks: found, pageReviews, duration_ms: Date.now() - started };
+  };
+
   // 1. Evidence base: the original article. Shortly fetches the full readable
   //    body when the stored text is thin (< 700 chars); a thin RSS-style
-  //    snippet makes true claims look unsupported.
+  //    snippet makes true claims look unsupported. fetchArticle retries
+  //    transient failures so the evidence is the same from run to run.
   let sourceTitle = news.sourceTitle.trim();
   let sourceText = news.sourceText.trim();
   // Stored scrape text is sometimes page furniture (cookie notices, widgets).
@@ -212,13 +276,18 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
   }
 
   const primary = news.sourceUrl ? { source: outletName(news.sourceUrl), url: news.sourceUrl } : null;
+  // The checker reads the first MAX_SOURCE_CHARS of the original; the rest is
+  // still searched for sentences about unconfirmed claims.
+  if (primary && sourceText.length > MAX_SOURCE_CHARS) fullTexts.push({ ...primary, title: sourceTitle, text: sourceText });
 
   // 2. Other outlets that published the same story: Shortly's own feeds
   //    (best matches) plus Bing/Google News, one article per outlet.
   const storyTitle = sourceTitle || news.headline;
   // The story's own outlet can't confirm itself: exclude it along with the original.
   const storyOutlet = news.storyUrl ? outletName(news.storyUrl) : null;
-  const excludeOutlets = [primary?.source, storyOutlet].filter((o): o is string => Boolean(o));
+  // Nor can DailyMattr, where PIX stories are published.
+  const ownOutlets = [storyOutlet, "DailyMattr"].filter((o): o is string => Boolean(o));
+  const excludeOutlets = [primary?.source, ...ownOutlets].filter((o): o is string => Boolean(o));
   const stats: SearchStats = { queries: [], fetched: 0, inWindow: 0, matched: 0 };
   const [fromShortly, fromNews] = await Promise.all([
     findRelatedSources(apiKey, {
@@ -278,7 +347,7 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
   //    coverage instead. Never grade against our own headline (circular).
   if ((sourceTitle + sourceText).trim().length < 40) {
     if (related.length === 0) {
-      return unscored(
+      return finish(unscored(
         news,
         started,
         sources,
@@ -286,25 +355,25 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
           ? "The original article couldn't be read and no other outlet that published this story was found, so there's nothing to check it against."
           : "No other outlet that published this story was found, so there's nothing to check it against.",
         searchInfo,
-      );
+      ));
     }
     // Headlines and snippets alone are too thin (true claims look "not in
-    // source"), so read the full articles of up to 3 outlets with direct links.
-    const readable = related.filter((r) => !/(^|\.)news\.google\.com$/.test(hostOf(r.url))).slice(0, 3);
+    // source"), so read the full articles of up to 4 outlets with direct links.
+    const readable = related.filter((r) => !/(^|\.)news\.google\.com$/.test(hostOf(r.url))).slice(0, FALLBACK_OUTLETS);
     const bodies = await Promise.all(
       readable.map(async (r) => {
-        try {
-          const a = await fetchArticle(r.url);
-          return a.text.length > 200 && !looksLikeBoilerplate(a.text) ? { r, text: a.text.slice(0, 1100) } : null;
-        } catch {
-          return null;
-        }
+        const text = await read(r.url, 15_000);
+        if (!text) return null;
+        // The first FALLBACK_CHARS go to the checker; the whole article is kept
+        // for the second look, since a fact can sit anywhere in it.
+        fullTexts.push({ source: r.source, url: r.url, title: r.title, text });
+        return { r, text: text.slice(0, FALLBACK_CHARS) };
       }),
     );
     const full = bodies.filter((b): b is NonNullable<typeof b> => b !== null);
     const fullUrls = new Set(full.map((b) => b.r.url));
     sourceTitle = (full[0]?.r ?? related[0]).title;
-    // Full bodies first: Shortly's checker reads the first 3,600 characters.
+    // Full bodies first: the checker reads the first MAX_SOURCE_CHARS characters.
     sourceText = [
       ...full.map((b) => `[${b.r.source}] ${b.r.title}\n${b.text}`),
       ...related.filter((r) => !fullUrls.has(r.url)).map((r) => `[${r.source}] ${r.title}. ${r.excerpt}`),
@@ -322,18 +391,43 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
     apiKey,
     {
       title: sourceTitle,
-      summary: `${news.headline}\n\n${news.summary}`.trim(),
+      summary: story,
+      claims,
       sourceText,
       primarySource: primary,
       relatedSources: related,
+      // For claims the first pass couldn't confirm: the sentences about them in
+      // every article already read, plus coverage found by searching for each claim.
+      moreEvidence: async (open) => {
+        // Until now the other outlets are known by headline and snippet only:
+        // read the ones with direct links (Google News links can't be read).
+        const unread = related.filter(
+          (r) => !/(^|\.)news\.google\.com$/.test(hostOf(r.url)) && !fullTexts.some((d) => d.url === r.url),
+        );
+        const [, searched] = await Promise.all([
+          Promise.all(
+            unread.map(async (r) => {
+              const text = await read(r.url, 8_000);
+              if (text) fullTexts.push({ source: r.source, url: r.url, title: r.title, text });
+            }),
+          ),
+          findCoverageForClaims(open, { publishedAt: news.publishedAt, excludeOutlets: ownOutlets, read }),
+        ]);
+        const fromRead = fullTexts.flatMap((d) => {
+          const excerpt = passagesFor(d.text, open);
+          return excerpt ? [{ source: d.source, url: d.url, title: d.title, excerpt }] : [];
+        });
+        const seen = new Set(fromRead.map((d) => d.url));
+        return [...fromRead, ...searched.filter((s) => !seen.has(s.url))];
+      },
     },
     { throwOnError: true },
   );
   if (!result) {
-    return unscored(news, started, sources, "Not enough story or source text to check.", searchInfo);
+    return finish(unscored(news, started, sources, "No checkable factual claims were found in the story, or there was too little source text to check them against.", searchInfo));
   }
 
-  return {
+  return finish({
     headline: news.headline,
     pixId: news.pixId ?? null,
     scored: true,
@@ -349,5 +443,5 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
     method: result.fact_notes.method,
     duration_ms: Date.now() - started,
     search: searchInfo,
-  };
+  });
 }
