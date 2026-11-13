@@ -121,7 +121,7 @@ export function FactCheckProgress({ step }: { step: number }) {
       <Loader2 className="size-5 animate-spin text-primary" />
       <div>
         <div className="font-medium">{STEPS[step]}</div>
-        <div className="text-sm text-muted-foreground">Usually takes 15–30 seconds.</div>
+        <div className="text-sm text-muted-foreground">Usually takes 25–50 seconds.</div>
       </div>
     </div>
   );

@@ -27,7 +27,7 @@ Every check ends with a plain verdict (`lib/verdict.ts`), decided in code in thi
      the same as false: a story no one else has reported may be new, exclusive or made up.
 
 The PIX list shows the verdict of every story checked in the last 6 hours, and
-**Check true or false** checks the rest of the page (two at a time, about 30 seconds each).
+**Check true or false** checks the rest of the page (two at a time, under a minute each).
 
 ## How the score works
 
@@ -62,8 +62,8 @@ it is now stricter: method `source-grounding-v2`.
    figures) are found in no source, the score caps at 84, below Verified.
    Labels: Verified ≥ 85, Mostly factual ≥ 65, Mixed ≥ 40, Unverified < 40.
 
-A check reads up to a few dozen pages and makes three or four model calls, so it takes
-about 15–30 seconds.
+A check reads up to a few dozen pages and makes four or five model calls, so it takes
+about 25–50 seconds.
 
 The score measures whether our story matches the reporting. It does not prove the
 reporting itself is true, and facts we leave out don't lower it. The verdicts come from

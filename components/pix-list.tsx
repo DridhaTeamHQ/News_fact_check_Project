@@ -59,7 +59,7 @@ export function PixList({ posts, verdicts }: { posts: PixPostSummary[]; verdicts
               ? "All news on this page checked"
               : `Check true or false: ${unchecked.length} news on this page`}
         </Button>
-        {running && <span className="text-sm text-muted-foreground">About 30 seconds per story, two at a time.</span>}
+        {running && <span className="text-sm text-muted-foreground">Under a minute per story, two at a time.</span>}
       </div>
 
       <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

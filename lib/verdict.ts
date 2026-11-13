@@ -37,7 +37,12 @@ export function ratingOf(word: string): Rating {
   return "unclear";
 }
 
-const quote = (s: string, n = 120) => `“${s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, "")}…` : s}”`;
+/** A claim in quotes, shortened at a word, without its own final full stop
+ * (the sentence around it supplies one). */
+const quote = (s: string, n = 120) => {
+  const t = s.trim().replace(/[.。]+$/, "");
+  return `“${t.length > n ? `${t.slice(0, n).replace(/\s+\S*$/, "")}…` : t}”`;
+};
 
 export function decideVerdict(input: {
   scored: boolean;
