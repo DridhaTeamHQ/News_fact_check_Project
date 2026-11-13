@@ -16,7 +16,7 @@ export function SiteHeader() {
             PIX news
           </Link>
           <Link href="/check" className="rounded-md px-3 py-1.5 font-medium hover:bg-muted">
-            Check any news
+            Check a news link
           </Link>
         </nav>
       </div>

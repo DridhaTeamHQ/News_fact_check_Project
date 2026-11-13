@@ -126,11 +126,33 @@ export async function listPixPosts(query: string, limit = 30): Promise<PixPostSu
   return (await listPixPage({ page: 1, pageSize: limit, query })).posts;
 }
 
+/** DailyMattr news pages are /news/<headline-slug>-<published_id>
+ * (Dailymattrmain api/_lib/slug.js). Returns that published_id, or null. */
+export function publishedIdFromDailyMattrUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (!/^(www\.)?dailymattr\.com$/i.test(u.hostname)) return null;
+    return u.pathname.match(/^\/news\/(?:[^/]+\/)?[^/]*-(\d+)\/?$/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPixPostByPublishedId(publishedId: string): Promise<PixPost | null> {
+  if (!/^\d{1,12}$/.test(publishedId)) return null;
+  return fetchPixPost({ published_id: `eq.${publishedId}` });
+}
+
 export async function getPixPost(id: string): Promise<PixPost | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  return fetchPixPost({ id: `eq.${id}` });
+}
+
+async function fetchPixPost(filter: Record<string, string>): Promise<PixPost | null> {
   const params = new URLSearchParams({
     select: `${LIST_COLS},detail_body,summary,article_text`,
-    id: `eq.${id}`,
+    ...filter,
+    order: "published_at.desc.nullslast",
     limit: "1",
   });
   const {

@@ -1,6 +1,6 @@
 import { FactChecker } from "@/components/fact-checker";
 
-export const metadata = { title: "Check any news · Fact Check Mediator" };
+export const metadata = { title: "Check a news link · Fact Check Mediator" };
 
 export default function CheckPage() {
   return (

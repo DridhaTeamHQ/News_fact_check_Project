@@ -84,7 +84,15 @@ export async function fetchArticle(url: string): Promise<{ title: string; text: 
     cache: "no-store",
     signal: AbortSignal.timeout(12_000),
   });
-  if (!res.ok) throw new Error(`Could not open the link (HTTP ${res.status})`);
+  if (!res.ok) {
+    throw new Error(
+      res.status === 404 || res.status === 410
+        ? `That page wasn't found (HTTP ${res.status}). Check the link and try again.`
+        : res.status === 401 || res.status === 403 || res.status === 429
+          ? `That site blocks automatic reading (HTTP ${res.status}), so its page can't be read.`
+          : `Could not open the link (HTTP ${res.status}).`,
+    );
+  }
   const html = (await res.text()).slice(0, 2_000_000);
 
   const ld = jsonLdArticle(html);

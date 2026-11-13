@@ -5,7 +5,7 @@ other outlets reported, and gives each story a fact score with its sources.
 
 - **`/`**: all published PIX news with photos, search and pagination.
 - **`/pix/[id]`**: one PIX with its fact check, which runs automatically when the page opens.
-- **`/check`**: paste any story plus the link to its original article.
+- **`/check`**: paste a news link. A DailyMattr link is checked as its PIX; any other article is checked against other outlets that published the same news.
 
 ## How the score works
 

@@ -7,8 +7,14 @@ import {
   type ClaimVerdict,
   type FactCheckResult,
 } from "./shortly/fact-check";
-import { findOutletsCovering, outletKey } from "./news-search";
-import { findRelatedSources, type RelatedSource } from "./shortly/related-sources";
+import { findOutletsCovering, outletKey, searchQueriesFor, type FoundArticle, type SearchStats } from "./news-search";
+import { findRelatedSources, significantTokens, type RelatedSource } from "./shortly/related-sources";
+
+/** At least 2 significant words in common (Shortly's token rule). */
+function sharesKeyWords(a: string, b: string): boolean {
+  const bt = new Set(significantTokens(b));
+  return significantTokens(a).filter((t) => bt.has(t)).length >= 2;
+}
 
 /** Other outlets (besides the original) to find, show and check against. */
 const MAX_OTHER_OUTLETS = 10;
@@ -36,6 +42,7 @@ export type NewsInput = {
   sourceTitle: string; // the original article's headline ("" if unknown)
   sourceText: string; // the original article's body ("" if unknown)
   sourceUrl?: string | null;
+  storyUrl?: string | null; // where our story itself is published; its outlet is never used as evidence
   publishedAt?: string | null;
   pixId?: string | null;
 };
@@ -46,6 +53,7 @@ export type ReportSource = {
   title: string;
   excerpt: string; // what that outlet reports (start of its article, or a search snippet)
   primary: boolean; // the article our story was written from
+  match: "original" | "story" | "related"; // related = covers one event in our story
   published: string | null;
 };
 
@@ -64,6 +72,7 @@ export type FactCheckReport = {
   model: string;
   method: string;
   duration_ms: number;
+  search: { queries: string[]; fromShortly: number; fetched: number; matched: number } | null;
 };
 
 export const openaiConfigured = () => Boolean(process.env.OPENAI_API_KEY);
@@ -91,7 +100,45 @@ const OUTLETS: Record<string, string> = {
   "bbc.com": "BBC",
   "aljazeera.com": "Al Jazeera",
   "dawn.com": "Dawn",
+  "timesnownews.com": "Times Now",
+  "wionews.com": "WION",
+  "firstpost.com": "Firstpost",
+  "abplive.com": "ABP Live",
+  "freepressjournal.in": "Free Press Journal",
+  "news.abplive.com": "ABP Live",
+  "zeenews.india.com": "Zee News",
+  "republicworld.com": "Republic World",
+  "theprint.in": "ThePrint",
+  "scroll.in": "Scroll",
+  "thewire.in": "The Wire",
+  "outlookindia.com": "Outlook",
+  "dnaindia.com": "DNA",
+  "tribuneindia.com": "The Tribune",
+  "thequint.com": "The Quint",
+  "cnbctv18.com": "CNBC-TV18",
+  "businesstoday.in": "Business Today",
+  "techcrunch.com": "TechCrunch",
+  "apnews.com": "AP News",
+  "theguardian.com": "The Guardian",
+  "nytimes.com": "The New York Times",
+  "cnn.com": "CNN",
+  "bloomberg.com": "Bloomberg",
+  "inc42.com": "Inc42",
 };
+
+const KNOWN_OUTLET_NAMES = new Set(Object.values(OUTLETS).map(outletKey));
+
+/** A recognised news outlet (vs a blog, coaching site or aggregator), by its
+ * site or, for Google News redirect links, by its name. */
+function isKnownOutlet(url: string, name: string): boolean {
+  if (KNOWN_OUTLET_NAMES.has(outletKey(name))) return true;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").replace(/^m\./, "");
+    return Boolean(OUTLETS[host] ?? OUTLETS[host.split(".").slice(-2).join(".")]);
+  } catch {
+    return false;
+  }
+}
 
 export function outletName(url: string): string {
   let host = url;
@@ -111,7 +158,14 @@ const hostOf = (url: string) => {
   }
 };
 
-const unscored = (news: NewsInput, started: number, sources: ReportSource[], note: string): FactCheckReport => ({
+const unscored = (
+  news: NewsInput,
+  started: number,
+  sources: ReportSource[],
+  note: string,
+  search: FactCheckReport["search"] = null,
+): FactCheckReport => ({
+  search,
   headline: news.headline,
   pixId: news.pixId ?? null,
   scored: false,
@@ -149,7 +203,9 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
         sourceText = article.text;
         notes.push("Read the full original article from its link.");
       }
-      if (!sourceTitle) sourceTitle = article.title;
+      // Only trust a fetched headline that's about our story: blocked or odd
+      // pages return titles like "Access Denied" or a social post's title.
+      if (!sourceTitle && sharesKeyWords(article.title, news.headline)) sourceTitle = article.title;
     } catch {
       notes.push("The original article's link could not be opened.");
     }
@@ -160,34 +216,52 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
   // 2. Other outlets that published the same story: Shortly's own feeds
   //    (best matches) plus Bing/Google News, one article per outlet.
   const storyTitle = sourceTitle || news.headline;
+  // The story's own outlet can't confirm itself: exclude it along with the original.
+  const storyOutlet = news.storyUrl ? outletName(news.storyUrl) : null;
+  const excludeOutlets = [primary?.source, storyOutlet].filter((o): o is string => Boolean(o));
+  const stats: SearchStats = { queries: [], fetched: 0, inWindow: 0, matched: 0 };
   const [fromShortly, fromNews] = await Promise.all([
     findRelatedSources(apiKey, {
       title: storyTitle,
-      source: primary?.source ?? null,
-      url: news.sourceUrl ?? null,
+      source: primary?.source ?? storyOutlet,
+      url: news.sourceUrl ?? news.storyUrl ?? null,
       scrapedAt: news.publishedAt ?? null,
     }),
-    findOutletsCovering(
-      apiKey,
-      { title: storyTitle, publishedAt: news.publishedAt },
-      { limit: MAX_OTHER_OUTLETS, excludeOutlets: primary ? [primary.source] : [] },
+    // Search by the story's news events too, not just its headline.
+    searchQueriesFor(apiKey, storyTitle, sourceText || news.summary).then((queries) =>
+      findOutletsCovering(
+        apiKey,
+        { title: storyTitle, publishedAt: news.publishedAt, queries },
+        { limit: MAX_OTHER_OUTLETS * 2, excludeOutlets, stats }, // spare candidates: some repeat Shortly's matches
+      ),
     ),
   ]);
-  const seenOutlets = new Set(primary ? [outletKey(primary.source)] : []);
-  const seenHosts = new Set(news.sourceUrl ? [hostOf(news.sourceUrl)] : []);
-  const related: (RelatedSource & { published?: string | null })[] = [];
-  for (const r of [...fromShortly, ...fromNews]) {
+  const seenOutlets = new Set(excludeOutlets.map(outletKey));
+  const seenHosts = new Set([news.sourceUrl, news.storyUrl].filter((u): u is string => Boolean(u)).map(hostOf));
+  const related: (RelatedSource & { published?: string | null; match?: "story" | "related" })[] = [];
+  // Shortly's curated feeds first, then news-search results: same-story before
+  // related-event coverage, and recognised news outlets ahead of blogs and
+  // aggregators within each group (stable otherwise, so best matches lead).
+  const rank = (a: FoundArticle) => (a.match === "related" ? 2 : 0) + (isKnownOutlet(a.url, a.source) ? 0 : 1);
+  const rankedNews = [...fromNews].sort((a, b) => rank(a) - rank(b));
+  for (const r of [...fromShortly, ...rankedNews]) {
     const key = outletKey(r.source);
-    if (seenOutlets.has(key) || seenHosts.has(hostOf(r.url))) continue;
+    // Google News links all share news.google.com, so they're de-duplicated
+    // by outlet name only, never by host.
+    const host = hostOf(r.url);
+    const hostKey = /(^|\.)news\.google\.com$/.test(host) ? null : host;
+    if (seenOutlets.has(key) || (hostKey && seenHosts.has(hostKey))) continue;
     seenOutlets.add(key);
-    seenHosts.add(hostOf(r.url));
+    if (hostKey) seenHosts.add(hostKey);
     related.push(r);
     if (related.length >= MAX_OTHER_OUTLETS) break;
   }
 
+  const searchInfo = { queries: stats.queries, fromShortly: fromShortly.length, fetched: stats.fetched, matched: stats.matched };
+
   const sources: ReportSource[] = [
     ...(primary
-      ? [{ ...primary, title: sourceTitle, excerpt: sourceText.slice(0, 320), primary: true, published: news.publishedAt ?? null }]
+      ? [{ ...primary, title: sourceTitle, excerpt: sourceText.slice(0, 320), primary: true, match: "original" as const, published: news.publishedAt ?? null }]
       : []),
     ...related.map((r) => ({
       source: r.source,
@@ -195,6 +269,7 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
       title: r.title,
       excerpt: r.excerpt,
       primary: false,
+      match: r.match ?? ("story" as const),
       published: r.published ?? null,
     })),
   ];
@@ -208,13 +283,38 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
         started,
         sources,
         news.sourceUrl
-          ? "The original article couldn't be read and no other outlet in Shortly's feeds covered this story, so there's nothing to check it against."
-          : "No original source link, and no other outlet in Shortly's feeds covered this story, so there's nothing to check it against.",
+          ? "The original article couldn't be read and no other outlet that published this story was found, so there's nothing to check it against."
+          : "No other outlet that published this story was found, so there's nothing to check it against.",
+        searchInfo,
       );
     }
-    sourceTitle = related[0].title;
-    sourceText = related.map((r) => `[${r.source}] ${r.title}. ${r.excerpt}`).join("\n\n");
-    notes.push("Checked against other outlets' coverage because the original article couldn't be read.");
+    // Headlines and snippets alone are too thin (true claims look "not in
+    // source"), so read the full articles of up to 3 outlets with direct links.
+    const readable = related.filter((r) => !/(^|\.)news\.google\.com$/.test(hostOf(r.url))).slice(0, 3);
+    const bodies = await Promise.all(
+      readable.map(async (r) => {
+        try {
+          const a = await fetchArticle(r.url);
+          return a.text.length > 200 && !looksLikeBoilerplate(a.text) ? { r, text: a.text.slice(0, 1100) } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const full = bodies.filter((b): b is NonNullable<typeof b> => b !== null);
+    const fullUrls = new Set(full.map((b) => b.r.url));
+    sourceTitle = (full[0]?.r ?? related[0]).title;
+    // Full bodies first: Shortly's checker reads the first 3,600 characters.
+    sourceText = [
+      ...full.map((b) => `[${b.r.source}] ${b.r.title}\n${b.text}`),
+      ...related.filter((r) => !fullUrls.has(r.url)).map((r) => `[${r.source}] ${r.title}. ${r.excerpt}`),
+    ].join("\n\n");
+    const why = news.sourceUrl ? " because the original article couldn't be read" : "";
+    notes.push(
+      full.length
+        ? `Checked against the full articles of ${full.length} other outlet${full.length === 1 ? "" : "s"}${why}, plus the rest of the coverage.`
+        : `Checked against other outlets' headlines and snippets${why}.`,
+    );
   }
 
   // 4. Shortly's fact check.
@@ -230,7 +330,7 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
     { throwOnError: true },
   );
   if (!result) {
-    return unscored(news, started, sources, "Not enough story or source text to check.");
+    return unscored(news, started, sources, "Not enough story or source text to check.", searchInfo);
   }
 
   return {
@@ -248,5 +348,6 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
     model: factCheckModel(),
     method: result.fact_notes.method,
     duration_ms: Date.now() - started,
+    search: searchInfo,
   };
 }

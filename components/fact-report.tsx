@@ -63,7 +63,7 @@ const fmtDay = (iso: string) => {
 
 /* ---------- running a check ---------- */
 
-export type CheckPayload = { pixId?: string; text?: string; sourceUrl?: string; force?: boolean };
+export type CheckPayload = { pixId?: string; url?: string; force?: boolean };
 
 /** Calls /api/check and tracks loading / progress step / error / report. */
 export function useFactCheck() {
@@ -220,6 +220,14 @@ export function FactReport({ report }: { report: FactCheckReport }) {
                       {s.source}
                     </a>
                     {s.primary && <span className="ml-2 text-xs text-muted-foreground">original source</span>}
+                    {s.match === "related" && (
+                      <span
+                        className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                        title="Covers one of the news events in this story, not the whole story"
+                      >
+                        related
+                      </span>
+                    )}
                     {(s.title || s.published) && (
                       <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={s.title}>
                         {[s.title, s.published ? fmtDay(s.published) : ""].filter(Boolean).join(" · ")}
