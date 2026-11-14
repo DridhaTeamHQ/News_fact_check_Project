@@ -108,7 +108,7 @@ With a `userId`, the last news a person had checked is their **current news**, a
 
 ## Follow-up questions
 
-A `check` reply for **real news** (verdict `true` or `mostly-true`) has 3 `questions` about that news: Explain like I'm 5 · Why does it matter? · What happens next? (The reply already tells the news itself.) Fake, partly false and unverified results get no questions (no `questions` field). Send them after the messages as a WhatsApp **list message**: body `"Want to know more? Pick a question 👇"`, button `"Ask about this news"`, one row per question (row `id` = question `id`, `title`, `description`).
+A `check` reply for **real news** (verdict `true` or `mostly-true`) has 4 `questions` about that news: Tell me more about this · Explain like I'm 5 · Give me the 5 W's · Show me opposite sides. (The reply already tells the news itself.) Fake, partly false and unverified results get no questions (no `questions` field). Send them after the messages as a WhatsApp **list message**: body `"Want to know more? Pick a question 👇"`, button `"Ask about this news"`, one row per question (row `id` = question `id`, `title`, `description`).
 
 When the person picks a row, WhatsApp sends your webhook `interactive.list_reply.id`. Post it back:
 
@@ -171,6 +171,7 @@ Always JSON with `kind` and `messages`. Send the messages in order.
 ```
 
 - `text` uses WhatsApp formatting (`*bold*`, `_italic_`), so it can be sent as is.
+- `sources` (on the message that lists the other articles): `{ "label", "items": [{ "title", "source", "url" }], "open"? }`, every other article on the news, up to 10; `text` and `buttons` carry the first 3. A chat that can fold a list (the web demo) shows `label` with a down arrow in place of the text and buttons, and the whole list once it is opened (`open: true`: it starts opened). On WhatsApp, ignore it.
 - `buttons`: up to 3 link buttons, each label 20 characters or fewer (WhatsApp's limit). `plainText` is the same message with the links written out, for when you send plain text.
 - `check` is present only when `kind` is `"check"`.
   - `verdict`: `false`, `partly-false`, `unverified`, `mostly-true` or `true`.

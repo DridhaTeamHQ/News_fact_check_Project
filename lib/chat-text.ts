@@ -4,6 +4,8 @@
 import type { VerdictLabel } from "./verdict";
 
 export const BOT_NAME = "NIA";
+/** The assistant's full name, shown beside its logo at the top of the chat. */
+export const BOT_TITLE = `${BOT_NAME} - Your AI Assistant`;
 
 export const WELCOME_TEXT = `Hi 👋 I'm *${BOT_NAME}*, your news buddy.\n\nGot a forward that looks fishy? Send it my way, or paste a news link. I'll check the facts and tell you if it's *true or false* ✅❌`;
 
@@ -13,6 +15,9 @@ export type ChatButton = {
   label: string; // at most 20 characters (WhatsApp's limit for a link button)
   url: string;
 };
+
+/** An article on the checked news. */
+export type ChatSource = { title: string; source: string; url: string };
 
 export type ChatMessage = {
   text: string;
@@ -27,6 +32,11 @@ export type ChatMessage = {
   /** A picture to show with the message (the DailyMattr post's photo): send
    * it as the message's image header. */
   image?: string;
+  /** On the message that lists the other articles: every one of them (`text`
+   * and `buttons` carry the first three). A chat that can fold a list shows
+   * `label` with a down arrow in place of the text and buttons, and the whole
+   * list once it is opened; `open` means it starts opened. Others ignore it. */
+  sources?: { label: string; items: ChatSource[]; open?: boolean };
 };
 
 export type ChatCheck = {

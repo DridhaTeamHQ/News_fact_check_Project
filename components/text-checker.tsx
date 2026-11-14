@@ -3,19 +3,25 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowUp,
-  ArrowUpRight,
   Check,
   ChevronDown,
   ExternalLink,
   ImagePlus,
-  MessageCircleQuestion,
-  Sparkles,
+  Newspaper,
+  Sparkle,
   Square,
   SquarePen,
 } from "lucide-react";
 import { PixImage } from "@/components/pix-image";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { BOT_NAME, CHECK_FAILED, type ChatMessage, type ChatQuestion, type ChatReply } from "@/lib/chat-text";
+import {
+  BOT_NAME,
+  BOT_TITLE,
+  CHECK_FAILED,
+  type ChatMessage,
+  type ChatQuestion,
+  type ChatReply,
+} from "@/lib/chat-text";
 import { cn } from "@/lib/utils";
 
 /* "Ask NIA": a chat with the fact-check assistant. Paste a message or a news
@@ -169,8 +175,7 @@ export function TextChecker() {
         <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <BotAvatar />
-            <span className="font-semibold">{BOT_NAME}</span>
-            <span className="truncate text-muted-foreground">Fact-check assistant</span>
+            <span className="truncate font-semibold">{BOT_TITLE}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <ThemeToggle className="text-muted-foreground hover:text-foreground" />
@@ -192,10 +197,11 @@ export function TextChecker() {
       >
         {empty ? (
           <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-6 text-center">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-              <Sparkles className="size-6" aria-hidden />
+            <div className="flex justify-center">
+              <BotAvatar large />
             </div>
-            <h1 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">Is this news real?</h1>
+            <p className="mt-3 text-sm font-semibold">{BOT_TITLE}</p>
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">Is this news real?</h1>
             <p className="mx-auto mt-2 max-w-md text-balance text-muted-foreground">
               Paste a forwarded message or a news link. {BOT_NAME} checks the facts and tells you if it&apos;s true or
               false.
@@ -291,13 +297,17 @@ function RichText({ text }: { text: string }) {
 
 /* ---------- messages ---------- */
 
-function BotAvatar() {
+/** NIA's logo: a white four-point star on a blue-to-violet disc. */
+function BotAvatar({ large = false }: { large?: boolean }) {
   return (
     <span
-      className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full bg-linear-to-br from-[#3d94f6] to-[#7a55ee] text-white",
+        large ? "size-14 shadow-lg shadow-[#5b76f2]/35" : "size-7 shadow-sm shadow-[#5b76f2]/40",
+      )}
       aria-hidden
     >
-      <Sparkles className="size-4" />
+      <Sparkle className={cn("fill-current", large ? "size-7" : "size-3.5")} />
     </span>
   );
 }
@@ -336,7 +346,63 @@ function UserMessage({ text }: { text: string }) {
   );
 }
 
+/** The other articles on the news, folded behind their heading: the down
+ * arrow opens the whole list, each article a link. */
+function Sources({ sources }: { sources: NonNullable<ChatMessage["sources"]> }) {
+  const [open, setOpen] = useState(sources.open ?? false);
+  const listId = useId();
+  const box = useRef<HTMLDivElement>(null);
+  const opened = useRef(false); // opened by the reader, not from the start
+  // Opened at the bottom of the chat: bring the list into view.
+  useEffect(() => {
+    if (open && opened.current) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [open]);
+  return (
+    <div ref={box} className="scroll-mb-4">
+      <button
+        type="button"
+        onClick={() => {
+          opened.current = true;
+          setOpen((o) => !o);
+        }}
+        aria-expanded={open}
+        aria-controls={listId}
+        className={cn(
+          "inline-flex h-9 max-w-full items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+          open ? "border-primary/50 bg-accent text-accent-foreground" : "bg-card",
+        )}
+      >
+        <Newspaper className="size-4 shrink-0 text-primary" aria-hidden />
+        <span className="truncate">{sources.label}</span>
+        <span className="text-xs text-muted-foreground tabular-nums">{sources.items.length}</span>
+        <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {open && (
+        <ul id={listId} className="mt-2 max-w-xl divide-y overflow-hidden rounded-xl border bg-card">
+          {sources.items.map((s) => (
+            <li key={s.url}>
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-3 px-3.5 py-2.5 transition-colors outline-none hover:bg-accent focus-visible:bg-accent"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{s.title}</span>
+                  <span className="block text-xs text-muted-foreground">{s.source}</span>
+                </span>
+                <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function BotMessage({ message }: { message: ChatMessage }) {
+  if (message.sources?.items.length) return <Sources sources={message.sources} />;
   return (
     <div className="space-y-3">
       {message.image && (
@@ -365,9 +431,9 @@ function BotMessage({ message }: { message: ChatMessage }) {
   );
 }
 
-/** Follow-up questions about the checked news, behind an open / close
- * button so they don't crowd the reply. Sent once per check and usable until
- * newer news is checked; questions already asked are ticked. */
+/** Follow-up questions about the checked news, as chips under the reply. Sent
+ * once per check and usable until newer news is checked; questions already
+ * asked are ticked. */
 function Questions({
   questions,
   onAsk,
@@ -382,59 +448,26 @@ function Questions({
   /** Newer news has come since: these questions are about forgotten news. */
   stale: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const listId = useId();
-  const box = useRef<HTMLDivElement>(null);
-  // Opened at the bottom of the chat: bring the questions into view.
-  useEffect(() => {
-    if (open) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [open]);
   if (stale) {
     return <p className="text-xs text-muted-foreground">Follow-up questions here were about earlier news.</p>;
   }
   return (
-    <div ref={box} className="scroll-mb-4">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-controls={listId}
-        className={cn(
-          "inline-flex h-9 max-w-full items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
-          open ? "border-primary/50 bg-accent text-accent-foreground" : "bg-card",
-        )}
-      >
-        <MessageCircleQuestion className="size-4 shrink-0 text-primary" aria-hidden />
-        <span className="truncate">Ask a follow-up</span>
-        <span className="text-xs text-muted-foreground tabular-nums">{questions.length}</span>
-        <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
-      </button>
-      {open && (
-        <ul id={listId} className="mt-2 grid gap-1.5 sm:grid-cols-2 sm:gap-2">
-          {questions.map((q) => (
-            <li key={q.id} className="min-w-0">
-              <button
-                type="button"
-                onClick={() => onAsk(q)}
-                disabled={disabled}
-                className="flex h-full w-full items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2 text-left transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:items-start sm:py-2.5"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{q.title}</span>
-                  {/* Phones: the title alone, to keep the list short. */}
-                  <span className="hidden text-xs text-muted-foreground sm:block">{q.description}</span>
-                </span>
-                {asked.has(q.id) ? (
-                  <Check className="size-4 shrink-0 text-primary sm:mt-0.5" aria-label="Asked" />
-                ) : (
-                  <ArrowUpRight className="size-4 shrink-0 text-muted-foreground sm:mt-0.5" aria-hidden />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="flex flex-wrap gap-2" aria-label="Ask about this news">
+      {questions.map((q) => (
+        <li key={q.id} className="max-w-full">
+          <button
+            type="button"
+            onClick={() => onAsk(q)}
+            disabled={disabled}
+            title={q.description}
+            className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border border-primary/15 bg-accent px-3.5 py-1.5 text-left text-sm font-medium text-primary transition-colors outline-none hover:border-primary/50 hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          >
+            {q.title}
+            {asked.has(q.id) && <Check className="size-3.5 shrink-0" aria-label="Asked" />}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

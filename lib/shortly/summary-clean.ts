@@ -69,12 +69,20 @@ export async function chatCompletionRaw(
   };
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-    });
+    let response: Response;
+    try {
+      response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+    } catch (err) {
+      // The connection itself failed ("fetch failed"): a network blip. Try again.
+      if (attempt === 2) throw err;
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      continue;
+    }
     if (response.ok) {
       const raw = (await response.json())?.choices?.[0]?.message?.content?.trim();
       if (!raw) throw new Error("empty completion");

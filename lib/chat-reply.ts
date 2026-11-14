@@ -1,4 +1,12 @@
-import { CHECK_FAILED, WELCOME_TEXT, type ChatButton, type ChatCheck, type ChatMessage, type ChatReply } from "./chat-text";
+import {
+  CHECK_FAILED,
+  WELCOME_TEXT,
+  type ChatButton,
+  type ChatCheck,
+  type ChatMessage,
+  type ChatReply,
+  type ChatSource,
+} from "./chat-text";
 import type { FactCheckReport } from "./factcheck";
 import type { NewsCheckResult } from "./news-check";
 import { dailyMattrUrl, type PixPostSummary } from "./pix";
@@ -14,7 +22,9 @@ export type { ChatButton, ChatCheck, ChatMessage, ChatReply };
  *   1. the verdict with its percentage ("❌ *FALSE* · 100% fake"), what is
  *      actually true, and what to do; sent as a reply to the reader's message;
  *   2. for real news only, the news itself in a few lines;
- *   3. the articles (what's actually happening), with "Read: …" link buttons.
+ *   3. the articles (what's actually happening), with "Read: …" link buttons:
+ *      the first three in the text, and all of them in `sources`, for chats
+ *      that can fold the list behind a down arrow.
  * Nothing here calls a model: the wording comes from the check itself, and
  * the news story is written before (lib/chat-followup.ts). */
 
@@ -50,6 +60,7 @@ const TOPIC_EMOJI: Record<string, string> = {
 };
 
 const MAX_BUTTONS = 3;
+const MAX_SOURCES = 10; // in a message's folded list of every other source
 
 /* ---------- the verdict and its percentage ---------- */
 
@@ -143,6 +154,18 @@ function message(text: string, buttons: ChatButton[] = [], replyTo?: string): Ch
     m.buttons = list;
     m.plainText = `${m.text}\n\n${list.map((b) => `🔗 ${b.label}\n${b.url}`).join("\n\n")}`;
   }
+  return m;
+}
+
+/** Give the articles' message its folded list: every other source, under the
+ * message's opening line. `open`: the list is the reply's main content (no
+ * story or DailyMattr post came before it), so it starts opened. */
+function withSources(m: ChatMessage, intro: string, all: ChatSource[], open: boolean): ChatMessage {
+  const items = all
+    .filter((s) => isPublicUrl(s.url))
+    .slice(0, MAX_SOURCES)
+    .map(({ title, source, url }) => ({ title, source, url }));
+  if (items.length) m.sources = { label: intro.replace(/[*_]/g, ""), items, ...(open ? { open } : {}) };
   return m;
 }
 
@@ -278,6 +301,7 @@ export function messageCheckReply(result: TextCheckResult, replyTo?: string, sto
   const asStory = (p: PixPostSummary) => ({
     line: `${emoji} *${p.headline}*`,
     title: p.headline,
+    source: "DailyMattr",
     label: headlineLabel(p.headline),
     url: dailyMattrUrl(p),
   });
@@ -291,30 +315,36 @@ export function messageCheckReply(result: TextCheckResult, replyTo?: string, sto
           .map((l) => ({
             line: `📰 *${l.title}* · ${l.source}`,
             title: l.title,
+            source: l.source,
             label: readLabel(shortSource(l.source)),
             url: l.url,
           })),
       ]
     : ranked.map(asStory);
-  const shown = candidates
+  const all = candidates
     .filter((s): s is typeof s & { url: string } => s.url !== null)
     .filter((s) => !lead || !sameTitle(s.title, lead.headline))
-    .filter((s, i, all) => all.findIndex((t) => t.url === s.url || sameTitle(t.title, s.title)) === i)
-    .slice(0, MAX_BUTTONS);
+    .filter((s, i, list) => list.findIndex((t) => t.url === s.url || sameTitle(t.title, s.title)) === i);
+  const shown = all.slice(0, MAX_BUTTONS);
   if (shown.length) {
     const intro = confirmed
       ? lead
-        ? "Also reported by 👇"
+        ? "Also reported by"
         : story
-          ? "Read the full story 👇"
-          : "Here's the full story 👇"
+          ? "Read the full story"
+          : "Here's the full story"
       : lead
-        ? "More on this 👇"
-        : "Here's what's *actually* happening 👇";
+        ? "More on this"
+        : "Here's what's *actually* happening";
     messages.push(
-      message(
-        `${intro}\n\n${shown.map((s) => s.line).join("\n\n")}`,
-        shown.map((s) => ({ label: s.label, url: s.url })),
+      withSources(
+        message(
+          `${intro} 👇\n\n${shown.map((s) => s.line).join("\n\n")}`,
+          shown.map((s) => ({ label: s.label, url: s.url })),
+        ),
+        intro,
+        all,
+        !lead && !story,
       ),
     );
   }
@@ -402,19 +432,24 @@ export function linkCheckReply(
       .filter((p) => p.id !== lead?.id && dailyMattrUrl(p))
       .map((p) => ({ title: p.headline, source: "DailyMattr", url: dailyMattrUrl(p)!, kind: "dailymattr" as const })),
   ].filter((s, i, all) => all.findIndex((t) => t.url === s.url) === i);
-  const shown = sources
+  const others = sources
     .filter((s) => !lead || !sameTitle(s.title, lead.headline))
-    .filter((s, i, all) => all.findIndex((t) => sameTitle(t.title, s.title)) === i)
-    .slice(0, MAX_BUTTONS);
+    .filter((s, i, all) => all.findIndex((t) => sameTitle(t.title, s.title)) === i);
+  const shown = others.slice(0, MAX_BUTTONS);
   if (shown.length) {
     const intro = isConfirmed(label) || publisher ? "Also reported by" : "Here's what other sources say";
     messages.push(
-      message(
-        `${intro} 👇\n\n${shown.map((s) => `📰 *${s.title}* · ${s.source}`).join("\n\n")}`,
-        shown.map((s) => ({
-          label: s.kind === "dailymattr" ? headlineLabel(s.title) : readLabel(shortSource(s.source)),
-          url: s.url,
-        })),
+      withSources(
+        message(
+          `${intro} 👇\n\n${shown.map((s) => `📰 *${s.title}* · ${s.source}`).join("\n\n")}`,
+          shown.map((s) => ({
+            label: s.kind === "dailymattr" ? headlineLabel(s.title) : readLabel(shortSource(s.source)),
+            url: s.url,
+          })),
+        ),
+        intro,
+        others,
+        !lead && !story,
       ),
     );
   }
