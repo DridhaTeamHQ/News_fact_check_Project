@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Fact Check Mediator",
-  description: "Checks whether a DailyMattr news story is true, partly true or false against other outlets.",
+  description: "Paste a message or a news link and find out if the news is true or false.",
 };
 
 /* Dark is the default theme. A reader who picked light (components/theme-toggle.tsx)
