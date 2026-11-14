@@ -43,7 +43,7 @@ const ANSWER_STEPS = ["Reading the sources…", "Writing the answer…"];
 type UserItem = { kind: "user"; id: string; text: string };
 type BotItem =
   | { kind: "bot"; id: string; message: ChatMessage }
-  | { kind: "questions"; id: string; questions: ChatQuestion[]; news: number };
+  | { kind: "questions"; id: string; questions: ChatQuestion[]; news: number; about: string }; // about: the checked message or link
 type Item = UserItem | BotItem;
 
 /** The conversation as turns: the reader's message, then everything the
@@ -123,7 +123,9 @@ export function TextChecker() {
     const seq = reply.kind === "check" ? news + 1 : news;
     if (seq !== news) setNews(seq);
     const bots: Item[] = reply.messages.map((m) => ({ kind: "bot", id: newId(), message: m }));
-    if (reply.questions?.length) bots.push({ kind: "questions", id: newId(), questions: reply.questions, news: seq });
+    if (reply.questions?.length) {
+      bots.push({ kind: "questions", id: newId(), questions: reply.questions, news: seq, about: said });
+    }
     setItems((all) => [...all, ...bots]);
     setPending(null);
     if (bots[0]) setFocus({ id: bots[0].id, block: "start" });
@@ -137,11 +139,12 @@ export function TextChecker() {
   }
 
   /** A follow-up question. The list stays where it is, under its check: scroll
-   * back to it to ask another. */
-  function ask(question: ChatQuestion) {
+   * back to it to ask another. The news goes along (`about`), so the question
+   * still gets its answer if the server no longer has that news. */
+  function ask(question: ChatQuestion, about: string) {
     if (pending) return;
     setAsked((all) => new Set(all).add(question.id));
-    void talk(question.title, { type: "question", questionId: question.id }, ANSWER_STEPS);
+    void talk(question.title, { type: "question", questionId: question.id, text: about }, ANSWER_STEPS);
   }
 
   function newChat() {
@@ -213,7 +216,7 @@ export function TextChecker() {
                         <Questions
                           key={item.id}
                           questions={item.questions}
-                          onAsk={ask}
+                          onAsk={(q) => ask(q, item.about)}
                           asked={asked}
                           disabled={pending !== null || item.news !== news}
                           stale={item.news !== news}

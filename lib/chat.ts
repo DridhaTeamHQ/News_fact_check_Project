@@ -20,6 +20,8 @@ import {
   QuestionExpiredError,
   rememberLink,
   rememberMessage,
+  tellNews,
+  type CheckContext,
 } from "./chat-followup";
 import { checkNews, NewsCheckError } from "./news-check";
 import { dailyMattrUrl, getPixPost } from "./pix";
@@ -133,6 +135,41 @@ function linkOf(text: string): string | null {
   return /^https?:\/\//i.test(text) ? text : `https://${text}`;
 }
 
+const isReal = (label: string) => label === "true" || label === "mostly-true";
+
+/** Check a forward (`text`) or a news link, and save it as `userId`'s current
+ * news. Real news comes with the news itself, in a few lines, and its
+ * articles; fake or unconfirmed news with only the DailyMattr stories on that
+ * exact thing. Throws NotNewsError or NewsCheckError. */
+async function check(
+  text: string,
+  link: string | null,
+  o: { force?: boolean; userId?: string; messageId?: string },
+): Promise<{ reply: ChatReply; news: CheckContext }> {
+  if (link) {
+    const report = await checkNews({ url: link, force: o.force });
+    // DailyMattr's post on this news: the link's own post, or a match.
+    const matched = report.pixId ? await ownPost(report.pixId) : await matchDailyMattr(report.headline);
+    // A fake or unconfirmed article: only DailyMattr stories on that exact thing.
+    const real = isReal(report.verdict.label);
+    const pix = report.pixId || real ? matched : await relatedToClaim(report.headline, report.verdict.label, matched);
+    const saved = rememberLink(link, report, o.userId);
+    const story = real ? await tellNews(saved.news) : null;
+    return { reply: withQuestions(linkCheckReply(report, o.messageId, pix, story), saved.questions), news: saved.news };
+  }
+  const checked = (!o.force && getCachedTextCheck(text)) || (await checkText(text));
+  const topic = topicOf(checked, text);
+  const result = { ...checked, topic: topic ?? "news" };
+  // True news: its own coverage. Fake or unconfirmed: only DailyMattr news on
+  // that exact thing, or none.
+  const label = result.report.verdict.label;
+  const real = isReal(label);
+  const shown = real ? result : { ...result, pix: await relatedToClaim(result.claim, label, result.pix) };
+  const saved = rememberMessage(text, result, o.userId);
+  const story = real ? await tellNews(saved.news) : null;
+  return { reply: withQuestions(messageCheckReply(shown, o.messageId, story), saved.questions), news: saved.news };
+}
+
 /** `body` is the parsed JSON request. `status` is 200 unless the check itself
  * failed (502); the reply always has messages to send. */
 export async function respond(body: unknown): Promise<{ reply: ChatReply; status: number }> {
@@ -157,11 +194,19 @@ export async function respond(body: unknown): Promise<{ reply: ChatReply; status
   if (type === "welcome") return ok(welcomeReply());
   if (type === "question") {
     const questionId = typeof b.questionId === "string" ? b.questionId.trim() : "";
+    // The news the question is about, if the sender passed it along: when it
+    // is no longer saved here (a restart, another server), it is checked again
+    // (quick while its check is still saved) instead of asking for it again.
+    const about = text.length <= MAX_LENGTH && (linkOf(text) || text.length >= MIN_LENGTH) ? text : "";
     try {
-      const answer = await answerQuestion(questionId);
+      const answer = await answerQuestion(
+        questionId,
+        about ? async () => (await check(about, linkOf(about), { userId })).news : undefined,
+      );
       return ok({ kind: "answer", messages: [{ text: answer, ...(messageId ? { replyTo: messageId } : {}) }] });
     } catch (err) {
-      if (err instanceof QuestionExpiredError) return ok(errorReply(QUESTION_EXPIRED, messageId));
+      const gone = err instanceof QuestionExpiredError || err instanceof NotNewsError || (err instanceof NewsCheckError && err.status < 500);
+      if (gone) return ok(errorReply(QUESTION_EXPIRED, messageId));
       console.error("[chat] question", err);
       return { reply: errorReply(CHECK_FAILED, messageId), status: 502 };
     }
@@ -179,24 +224,7 @@ export async function respond(body: unknown): Promise<{ reply: ChatReply; status
   if (!link && text.length < MIN_LENGTH) return ok(notNewsReply(messageId));
 
   try {
-    if (link) {
-      const report = await checkNews({ url: link, force });
-      // DailyMattr's post on this news: the link's own post, or a match.
-      const matched = report.pixId ? await ownPost(report.pixId) : await matchDailyMattr(report.headline);
-      // A fake or unconfirmed article: only DailyMattr stories on that exact thing.
-      const real = report.verdict.label === "true" || report.verdict.label === "mostly-true";
-      const pix = report.pixId || real ? matched : await relatedToClaim(report.headline, report.verdict.label, matched);
-      return ok(withQuestions(linkCheckReply(report, messageId, pix), rememberLink(link, report, userId)));
-    }
-    const checked = (!force && getCachedTextCheck(text)) || (await checkText(text));
-    const topic = topicOf(checked, text);
-    const result = { ...checked, topic: topic ?? "news" };
-    // True news: its own coverage. Fake or unconfirmed: only DailyMattr news on
-    // that exact thing, or none.
-    const label = result.report.verdict.label;
-    const real = label === "true" || label === "mostly-true";
-    const shown = real ? result : { ...result, pix: await relatedToClaim(result.claim, label, result.pix) };
-    return ok(withQuestions(messageCheckReply(shown, messageId), rememberMessage(text, result, userId)));
+    return ok((await check(text, link, { force, userId, messageId })).reply);
   } catch (err) {
     // No news in it ("who is Piyush Goyal"): about the chat's news, if there is some.
     if (err instanceof NotNewsError) return news ? answerAbout(news) : ok(notNewsReply(messageId));

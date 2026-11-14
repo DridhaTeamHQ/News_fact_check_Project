@@ -74,6 +74,8 @@ export type ChatReply = {
 /** The request body of the chat API (and the web demo's route). */
 export type ChatRequest = {
   type?: string; // "text" (default), "welcome", "question", or a WhatsApp media type: "image", "video", …
+  /** The message. With type "question" (optional): the forward or link the
+   * question is about, checked again if the server no longer has that news. */
   text?: string;
   messageId?: string;
   /** Who is chatting (their WhatsApp number): typed questions are answered

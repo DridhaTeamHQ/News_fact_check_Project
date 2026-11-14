@@ -16,7 +16,7 @@ Content-Type: application/json
 |-------------|---------|-------|
 | `text`      | string  | The message text. Up to 5,000 characters. |
 | `type`      | string  | `"text"` (default), `"welcome"`, `"question"` (a follow-up question, see below), or the WhatsApp message type for media: `"image"`, `"video"`, `"audio"`, `"document"`, `"sticker"`, … |
-| `questionId`| string  | With `type: "question"`: the `id` of the question the person picked. |
+| `questionId`| string  | With `type: "question"`: the `id` of the question the person picked. Optionally send the news it is about in `text` (the forward or link that was checked): if the server no longer has that news, it is checked again and the question still gets its answer. |
 | `userId`    | string  | Recommended. Who is chatting: the sender's WhatsApp number (`wa_id`). With it, NIA remembers the person's latest news and answers their typed questions about it (see "Conversation memory"). Without it, every message stands alone. |
 | `messageId` | string  | Optional. The WhatsApp message id (`wamid…`). The first reply comes back with `replyTo` set to it, so you can send it as a reply to the person's message. |
 | `force`     | boolean | Optional. `true` checks again instead of using a result saved in the last 6 hours. |
@@ -26,18 +26,18 @@ What the API does with it:
 | The person sent                                  | Reply `kind`  |
 |--------------------------------------------------|---------------|
 | A greeting (`hi`, `hello`, `start`, `help`, …), an empty message, or `type: "welcome"` | `welcome`: the NIA intro |
-| A forward or any news text (15+ characters)      | `check`: the verdict with its percentage, then real news |
+| A forward or any news text (15+ characters)      | `check`: the verdict with its percentage; for real news, the news itself and its articles |
 | Only a news link (`https://…` or `www.…`)        | `check`: the article checked against other outlets |
 | An image                                         | `unsupported`: "Checking photos is coming soon" |
 | Other media                                      | `unsupported`: "I can check text messages and news links" |
 | Something with no news in it                     | `not-news`: asks for a forward or a link |
 | A link with no readable article                  | `error`: asks for the article's own page |
 | `type: "question"` with a `questionId`           | `answer`: the answer |
-| A question about news the server no longer has   | `error`: asks to send the news again |
+| A question about news the server no longer has (and no `text` sent with it) | `error`: asks to send the news again |
 
 ## The replies
 
-A checked message gets two or three messages:
+A checked message gets up to four messages:
 
 **1. The verdict**, as a reply to the person's message. It opens with the verdict and a percentage, then one short paragraph and one tip:
 
@@ -63,7 +63,15 @@ The first line is one of:
 
 When nothing in the message could be checked, the line has no percentage. When a fact-checker settled it but few claims were found false, the line says who instead, e.g. `❌ *FALSE* · debunked by PIB Fact Check`.
 
-**2. DailyMattr first**: when a DailyMattr post covers this same news, it gets a message of its own, before anything else. The message has the post's photo in `image` (send it as the image header), its headline, the start of the story, and a "Read on DailyMattr" button:
+**2. The news itself (real news only)**: when the verdict is true or mostly true, the next message tells the news in 3 to 5 sentences, written from the sources' own words (the same evidence as the follow-up answers). Fake, partly false and unverified checks don't get it.
+
+```
+📰 *Here's the news*
+
+Japan has expressed interest in securing a steady supply of rare earth minerals from Andhra Pradesh, India. A Japanese delegation led by Ambassador Keiichi Ono met with the Andhra Pradesh government to discuss this. …
+```
+
+**3. DailyMattr first**: when a DailyMattr post covers this same news, it gets a message of its own, before any other article. The message has the post's photo in `image` (send it as the image header), its headline, the start of the story, and a "Read on DailyMattr" button:
 
 ```
 📲 *Read the full story on DailyMattr* 👇
@@ -75,13 +83,13 @@ When nothing in the message could be checked, the line has no percentage. When a
 
 The intro depends on the verdict: "Read the full story on DailyMattr" (true), "Here's the real story on DailyMattr" (false), or "DailyMattr on this news" (unverified). This works for links too: a checked article is matched to DailyMattr's post on the same news, and a DailyMattr link leads with its own post. `check.dailyMattr` gives the post's `title`, `url` and `image`, or `null` when DailyMattr hasn't covered it.
 
-**3. Then the rest**: up to 3 more headlines, each with a "Read" button. What counts depends on the verdict:
+**4. Then the articles**: up to 3 more headlines, each with a "Read" button. What counts depends on the verdict:
 
-- **True / mostly true**: only this story's own coverage. That's other DailyMattr posts on it, then other outlets ("Also reported by 👇", or "Here's the full story 👇" when DailyMattr hasn't covered it).
+- **True / mostly true**: only this story's own coverage. That's other DailyMattr posts on it, then other outlets ("Also reported by 👇", or "Read the full story 👇" when DailyMattr hasn't covered it).
 - **False, partly false, unverified**: only DailyMattr stories about the **exact thing the claim is about**: the same event, scheme, ban or decision, or an official denial or fact-check of it. One quick model call checks each candidate. A similar but different scheme, another state or the same general topic doesn't count. For example, "Tamil Nadu approves a state laptop scheme" is not shown for a fake "PM Free Laptop Yojana" forward.
 - **Nothing related**: when no story qualifies, no news message is sent. The reply is just the verdict.
 
-A checked **link** gets the same verdict line, the article's headline and a one-sentence reason, then up to 3 other outlets' reports with Read buttons.
+A checked **link** gets the same verdict line, the article's headline and a one-sentence reason, then (real news only) the news itself, then up to 3 other outlets' reports with Read buttons.
 
 ## Conversation memory
 
@@ -100,13 +108,15 @@ With a `userId`, the last news a person had checked is their **current news**, a
 
 ## Follow-up questions
 
-A `check` reply for **real news** (verdict `true` or `mostly-true`) has 4 `questions` about that news: Explain this news · Explain like I'm 5 · Why does it matter? · What happens next? Fake, partly false and unverified results get no questions (no `questions` field). Send them after the messages as a WhatsApp **list message**: body `"Want to know more? Pick a question 👇"`, button `"Ask about this news"`, one row per question (row `id` = question `id`, `title`, `description`).
+A `check` reply for **real news** (verdict `true` or `mostly-true`) has 3 `questions` about that news: Explain like I'm 5 · Why does it matter? · What happens next? (The reply already tells the news itself.) Fake, partly false and unverified results get no questions (no `questions` field). Send them after the messages as a WhatsApp **list message**: body `"Want to know more? Pick a question 👇"`, button `"Ask about this news"`, one row per question (row `id` = question `id`, `title`, `description`).
 
 When the person picks a row, WhatsApp sends your webhook `interactive.list_reply.id`. Post it back:
 
 ```json
-{ "type": "question", "questionId": "q:eli5:WQSQjjkg34DQ", "messageId": "wamid…" }
+{ "type": "question", "questionId": "q:eli5:WQSQjjkg34DQ", "messageId": "wamid…", "text": "<the forward or link that was checked>" }
 ```
+
+`text` is optional. With it, a question about news the server no longer has (see below) checks that news again and answers, instead of asking the person to send it again. That takes about a second while the check is still saved, and as long as a new check otherwise.
 
 The reply has `kind: "answer"` and one message with the answer. The questions are **not** sent again: the list message stays in the chat, and the person scrolls back up and taps it for another question (a WhatsApp list can be tapped any number of times).
 
@@ -116,9 +126,9 @@ The reply has `kind: "answer"` and one message with the answer. The questions ar
 *No*, the big boss in India is *not* giving free laptops to all students. But in one place called Tamil Nadu, the boss there is giving free laptops to some college kids. …
 ```
 
-Answers are written by GPT (`OPENAI_API_KEY`, the same model as the fact check) from **that one news item only**: the checked message, the verdict and the sources' own words. They never bring in other news or facts from memory, and never contradict the verdict. An answer takes 2 to 6 seconds.
+Answers are written by GPT (`OPENAI_API_KEY`, the same model as the fact check) from **that one news item only**: the checked message, the verdict and the sources' own words. They never bring in other news or facts from memory, and never contradict the verdict. An answer takes 2 to 6 seconds. The news story in a real-news reply is written the same way, and adds about that long to a new check.
 
-Each check's evidence is kept in the server's memory for 24 hours. After that, or after a restart, a question gets `kind: "error"` asking the person to send the news again.
+Each check's evidence is kept in the server's memory for 24 hours. After that, or after a restart, a question sent without `text` gets `kind: "error"` asking the person to send the news again.
 
 ## Response
 

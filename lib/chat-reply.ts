@@ -10,11 +10,13 @@ export type { ChatButton, ChatCheck, ChatMessage, ChatReply };
 
 /* The bot's (NIA's) replies, built from a check result, in the style of the
  * WhatsApp demo. Text uses WhatsApp formatting: *bold*, _italic_. A checked
- * message gets two messages:
+ * message gets these messages:
  *   1. the verdict with its percentage ("❌ *FALSE* · 100% fake"), what is
  *      actually true, and what to do; sent as a reply to the reader's message;
- *   2. what's actually happening, with "Read: …" link buttons.
- * Nothing here calls a model: the wording comes from the check itself. */
+ *   2. for real news only, the news itself in a few lines;
+ *   3. the articles (what's actually happening), with "Read: …" link buttons.
+ * Nothing here calls a model: the wording comes from the check itself, and
+ * the news story is written before (lib/chat-followup.ts). */
 
 const WORD: Record<VerdictLabel, string> = {
   true: "True",
@@ -231,7 +233,12 @@ const OPENING: Record<VerdictLabel, { title: string; lead: string }> = {
   true: { title: "👍 *Good news: this one is real!*", lead: "Trusted sources *report the same thing*." },
 };
 
-export function messageCheckReply(result: TextCheckResult, replyTo?: string): ChatReply {
+/** Real news, told in a few lines (written in lib/chat-followup.ts): its own
+ * message, after the verdict and before the articles. */
+const storyMessage = (story: string) => message(`📰 *Here's the news*\n\n${story}`);
+
+/** `story`: the news told in a few lines; given for real news only. */
+export function messageCheckReply(result: TextCheckResult, replyTo?: string, story?: string | null): ChatReply {
   const { report, realNews, links, pix, scores } = result;
   const label = report.verdict.label;
   const confirmed = isConfirmed(label);
@@ -254,12 +261,15 @@ export function messageCheckReply(result: TextCheckResult, replyTo?: string): Ch
   const first = [verdictLine(label, pct, fc?.by ?? null), open.title, para, advice].filter(Boolean).join("\n\n");
   const messages = [message(first, [], replyTo)];
 
-  // 2. DailyMattr first: when a DailyMattr post covers this same news, it gets
+  // 2. Real news: the news itself, in a few lines.
+  if (story) messages.push(storyMessage(story));
+
+  // 3. DailyMattr first: when a DailyMattr post covers this same news, it gets
   //    a message of its own (photo, headline, story, button).
   const lead = leadStory(pix);
   if (lead) messages.push(dailyMattrCard(lead, LEAD_INTRO[label]));
 
-  // 3. Then the rest, each a headline with a "Read: …" button.
+  // 4. Then the articles, each a headline with a "Read: …" button.
   //    True news: this story's own coverage (other DailyMattr posts on it, then
   //    other outlets), nothing else. Fake or unconfirmed: only the DailyMattr
   //    stories about that exact thing (lib/chat.ts filters them), or nothing.
@@ -295,7 +305,9 @@ export function messageCheckReply(result: TextCheckResult, replyTo?: string): Ch
     const intro = confirmed
       ? lead
         ? "Also reported by 👇"
-        : "Here's the full story 👇"
+        : story
+          ? "Read the full story 👇"
+          : "Here's the full story 👇"
       : lead
         ? "More on this 👇"
         : "Here's what's *actually* happening 👇";
@@ -346,8 +358,14 @@ const LINK_OPENING: Record<VerdictLabel, { title: string; advice: string }> = {
 };
 
 /** `pix`: DailyMattr posts on the same news as the article (for a DailyMattr
- * link, its own post); the reply leads with the closest one. */
-export function linkCheckReply(report: NewsCheckResult, replyTo?: string, pix: PixMatch[] = []): ChatReply {
+ * link, its own post); the reply leads with the closest one. `story`: the
+ * news told in a few lines; given for real news only. */
+export function linkCheckReply(
+  report: NewsCheckResult,
+  replyTo?: string,
+  pix: PixMatch[] = [],
+  story?: string | null,
+): ChatReply {
   const label = report.verdict.label;
   const pct = percentOf(label, report.claims);
   const fc = debunker(report);
@@ -365,11 +383,14 @@ export function linkCheckReply(report: NewsCheckResult, replyTo?: string, pix: P
     message([head, open.title, `📰 _${report.headline}_`, report.verdict.reason, open.advice].join("\n\n"), [], replyTo),
   ];
 
-  // 2. DailyMattr first, on its own, when it has this news.
+  // 2. Real news: the news itself, in a few lines.
+  if (story) messages.push(storyMessage(story));
+
+  // 3. DailyMattr first, on its own, when it has this news.
   const lead = leadStory(pix);
   if (lead) messages.push(dailyMattrCard(lead, LEAD_INTRO[label]));
 
-  // 3. Then the rest: fact-checkers, other outlets, other DailyMattr posts.
+  // 4. Then the rest: fact-checkers, other outlets, other DailyMattr posts.
   const sources = [
     ...report.factChecks
       .filter((f) => f.storyIs !== "unclear")
