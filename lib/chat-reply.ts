@@ -78,6 +78,8 @@ function percentOf(label: VerdictLabel, claims: FactCheckReport["claims"]): Pick
   const confirmed = claims.filter((c) => c.verdict === "supported" || c.verdict === "partially-supported").length;
   if (isFake(label)) return { percent: Math.round((100 * fake) / n), percentOf: "fake" };
   if (isConfirmed(label)) return { percent: Math.round((100 * confirmed) / n), percentOf: "true" };
+  // Unverified with nothing confirmed: no "0% confirmed".
+  if (confirmed === 0) return { percent: null, percentOf: null };
   return { percent: Math.round((100 * confirmed) / n), percentOf: "confirmed" };
 }
 
@@ -251,7 +253,8 @@ export const TOO_LONG = "That's a long one! 😅 Send me one message of up to 5,
 const OPENING: Record<VerdictLabel, { title: string; lead: string }> = {
   false: { title: "🎯 *Hey, you've spotted fake news!*", lead: "This forward is *not real*." },
   "partly-false": { title: "⚠️ *Careful: parts of this are fake*", lead: "Some of what this forward says is *wrong*." },
-  unverified: { title: "🤔 *I couldn't confirm this*", lead: "No trusted source reports this, so *don't trust it yet*." },
+  // The reason says why it couldn't be confirmed: no lead of its own.
+  unverified: { title: "🔎 *Unconfirmed: treat with caution*", lead: "" },
   "mostly-true": { title: "👍 *This one is mostly real*", lead: "Most of it *matches trusted reports*." },
   true: { title: "👍 *Good news: this one is real!*", lead: "Trusted sources *report the same thing*." },
 };
@@ -272,7 +275,7 @@ export function messageCheckReply(result: TextCheckResult, replyTo?: string, sto
   // 1. The verdict: "❌ FALSE · 100% fake", what's true, and one thing to do.
   const said = fc
     ? `*${fc.by}* has fact-checked this${fc.rating ? ` and rated it “${fc.rating}”` : ""}.`
-    : realNews?.headline
+    : realNews?.headline && label !== "unverified"
       ? ""
       : report.verdict.reason;
   const para = [open.lead, realNews?.headline, said].filter(Boolean).join(" ");
@@ -380,8 +383,8 @@ const LINK_OPENING: Record<VerdictLabel, { title: string; advice: string }> = {
   false: { title: "🎯 *Hey, you've spotted fake news!*", advice: "✅ Don't forward it." },
   "partly-false": { title: "⚠️ *Careful: parts of this story are wrong*", advice: "✅ Don't forward it as it is." },
   unverified: {
-    title: "🤔 *I couldn't confirm this story*",
-    advice: "✅ Wait until a trusted outlet reports it before you share it.",
+    title: "🔎 *Unconfirmed: treat with caution*",
+    advice: "✅ Don't share it until a trusted news outlet confirms it.",
   },
   "mostly-true": { title: "👍 *This story is mostly real*", advice: "👍 It's mostly safe to share." },
   true: { title: "👍 *Good news: this story is real!*", advice: "👍 It's safe to share." },

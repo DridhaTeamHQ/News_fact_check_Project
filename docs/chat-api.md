@@ -57,7 +57,7 @@ The first line is one of:
 |--------------|-------------------------------|---------------------------------------------------|
 | False        | `❌ *FALSE* · *N% fake*`       | false or reported nowhere |
 | Partly false | `⚠️ *PARTLY FALSE* · *N% fake*` | false or reported nowhere |
-| Unverified   | `❓ *UNVERIFIED* · *N% confirmed*` | confirmed by trusted sources |
+| Unverified   | `❓ *UNVERIFIED* · *N% confirmed*` | confirmed by trusted sources (no percentage when none is) |
 | Mostly true  | `✅ *MOSTLY TRUE* · *N% true*` | confirmed by trusted sources |
 | True         | `✅ *TRUE* · *N% true*`        | confirmed by trusted sources |
 
@@ -175,7 +175,7 @@ Always JSON with `kind` and `messages`. Send the messages in order.
 - `buttons`: up to 3 link buttons, each label 20 characters or fewer (WhatsApp's limit). `plainText` is the same message with the links written out, for when you send plain text.
 - `check` is present only when `kind` is `"check"`.
   - `verdict`: `false`, `partly-false`, `unverified`, `mostly-true` or `true`.
-  - `percent` and `percentOf` (`"fake"`, `"true"` or `"confirmed"`) are the numbers in the verdict line. Both are `null` when nothing was checkable.
+  - `percent` and `percentOf` (`"fake"`, `"true"` or `"confirmed"`) are the numbers in the verdict line. Both are `null` when nothing was checkable, and for an unverified result with no claim confirmed.
   - `fakeCaught` is `true` when the verdict is `false` or `partly-false`.
   - `input` is `"message"` or `"link"`; `topic` is `null` for links.
 - `questions` (on `check` replies only): `[{ "id", "title", "description" }]`, sized for a WhatsApp list (title ≤ 24 characters, description ≤ 72).

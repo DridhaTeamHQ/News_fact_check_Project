@@ -94,8 +94,8 @@ export function decideVerdict(input: {
       label: "unverified",
       reason:
         input.outlets === 0
-          ? "No other outlet has reported this story, so it can't be confirmed. It may be new, exclusive or made up."
-          : "There wasn't enough checkable detail to confirm or refute this story.",
+          ? "No trusted news outlet or fact-checker has reported this. It may be new, exclusive or untrue."
+          : "It doesn't contain enough specific detail to confirm or disprove.",
       basis: "claims",
     };
   } else if (contradicted.length >= 3 || contradicted.length / n >= 0.2) {
@@ -125,7 +125,10 @@ export function decideVerdict(input: {
   } else {
     verdict = {
       label: "unverified",
-      reason: `Only ${confirmed} of ${n} claims could be found in other outlets' reports. Nothing is contradicted, but most of it can't be confirmed.`,
+      reason:
+        confirmed === 0
+          ? "None of its claims appear in trusted news reports. Nothing in it is contradicted either, so it can't be called true or false yet."
+          : `${confirmed} of ${n} claims match trusted news reports; the rest can't be found in any of them. Nothing in it is contradicted.`,
       basis: "claims",
     };
   }
