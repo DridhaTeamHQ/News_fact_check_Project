@@ -140,7 +140,7 @@ export function FactCheckError({ message }: { message: string }) {
 
 /* ---------- result ---------- */
 
-export function FactReport({ report }: { report: FactCheckReport }) {
+export function FactReport({ report, showVerdict = true }: { report: FactCheckReport; showVerdict?: boolean }) {
   const [open, setOpen] = useState(false);
   const theme = LABEL_THEME[report.label ?? "unscored"];
   const n = report.sources.length;
@@ -149,7 +149,7 @@ export function FactReport({ report }: { report: FactCheckReport }) {
 
   return (
     <div className="space-y-6">
-      {report.verdict && <VerdictBanner verdict={report.verdict} />}
+      {showVerdict && report.verdict && <VerdictBanner verdict={report.verdict} />}
 
       {(report.pageReviews?.length > 0 || report.factChecks?.length > 0) && (
         <section className="rounded-xl border bg-card p-5 sm:p-6">
