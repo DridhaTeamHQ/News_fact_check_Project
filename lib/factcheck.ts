@@ -67,6 +67,8 @@ export type NewsInput = {
   pixId?: string | null;
   // Fact-checker ratings published on the story's own page (it is a fact-check).
   pageReviews?: ClaimReview[];
+  // How to search fact-checkers (default: "<headline> fact check", ±3 days).
+  factCheckSearch?: { windowDays?: number; extraQueries?: string[]; matchVariants?: boolean };
 };
 
 export type ReportSource = {
@@ -231,7 +233,7 @@ export async function runFactCheck(news: NewsInput): Promise<FactCheckReport> {
   const factChecks = findFactChecks(
     apiKey,
     { headline: news.headline, text: news.summary, publishedAt: news.publishedAt },
-    { read, excludeUrls: [news.storyUrl ?? ""] },
+    { read, excludeUrls: [news.storyUrl ?? ""], ...news.factCheckSearch },
   );
   const pageReviews = (news.pageReviews ?? []).map((r) => ({
     claim: r.claim,

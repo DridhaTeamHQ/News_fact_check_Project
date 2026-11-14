@@ -11,12 +11,17 @@ export function SiteHeader() {
             DailyMattr <span className="font-normal text-muted-foreground">· Fact Check</span>
           </span>
         </Link>
-        <nav className="flex items-center gap-1 text-sm">
-          <Link href="/" className="rounded-md px-3 py-1.5 font-medium hover:bg-muted">
-            PIX news
+        <nav className="flex items-center gap-0.5 text-sm sm:gap-1">
+          <Link href="/" className="rounded-md px-2 py-1.5 font-medium whitespace-nowrap hover:bg-muted sm:px-3">
+            PIX<span className="hidden sm:inline"> news</span>
           </Link>
-          <Link href="/check" className="rounded-md px-3 py-1.5 font-medium hover:bg-muted">
-            Check a news link
+          <Link href="/verify" className="rounded-md px-2 py-1.5 font-medium whitespace-nowrap hover:bg-muted sm:px-3">
+            <span className="sm:hidden">Message</span>
+            <span className="hidden sm:inline">Check a message</span>
+          </Link>
+          <Link href="/check" className="rounded-md px-2 py-1.5 font-medium whitespace-nowrap hover:bg-muted sm:px-3">
+            <span className="sm:hidden">Link</span>
+            <span className="hidden sm:inline">Check a news link</span>
           </Link>
         </nav>
       </div>

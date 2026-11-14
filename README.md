@@ -5,6 +5,7 @@ other outlets reported, and gives each story a fact score with its sources.
 
 - **`/`**: all published PIX news with photos, search and pagination.
 - **`/pix/[id]`**: one PIX with its fact check, which runs automatically when the page opens.
+- **`/verify`**: paste any message or forward and get **True / False**. See "Check a message" below.
 - **`/check`**: paste a news link. A DailyMattr link is checked as its PIX; any other article is checked against other outlets that published the same news.
 
 ## True or false: the verdict
@@ -27,7 +28,24 @@ Every check ends with a plain verdict (`lib/verdict.ts`), decided in code in thi
      the same as false: a story no one else has reported may be new, exclusive or made up.
 
 The PIX list shows the verdict of every story checked in the last 6 hours, and
-**Check true or false** checks the rest of the page (two at a time, about 30 seconds each).
+**Check true or false** checks the rest of the page (two at a time, under a minute each).
+
+## Check a message (`/verify`)
+
+Paste a message (often a WhatsApp forward). `lib/text-check.ts`:
+
+1. Restates its main claim as a neutral headline and picks key terms. Text with no news claim is refused.
+2. Finds DailyMattr PIX on the same news (headline search by key terms, kept by title-embedding similarity).
+   The original article behind the closest same-story PIX becomes the primary evidence.
+3. Runs the same strict check as above. Fact-checkers are searched over the last ten years and by key
+   terms, and a debunk of the same rumour with a different date or wording counts, since hoaxes get
+   forwarded again and again.
+4. A claim that would be major national news if true (an official announcement, a currency change…)
+   but that no outlet, fact-checker or DailyMattr story confirms is marked **False**.
+5. When the verdict isn't true, writes **the real news** from the evidence only, each point linked to its source.
+
+Sources are listed DailyMattr PIX first, then fact-checkers, then other outlets. Results are kept in
+memory for 6 hours per message text.
 
 ## How the score works
 
@@ -62,8 +80,8 @@ it is now stricter: method `source-grounding-v2`.
    figures) are found in no source, the score caps at 84, below Verified.
    Labels: Verified ≥ 85, Mostly factual ≥ 65, Mixed ≥ 40, Unverified < 40.
 
-A check reads up to a few dozen pages and makes three or four model calls, so it takes
-about 15–30 seconds.
+A check reads up to a few dozen pages and makes four or five model calls, so it takes
+about 25–50 seconds.
 
 The score measures whether our story matches the reporting. It does not prove the
 reporting itself is true, and facts we leave out don't lower it. The verdicts come from

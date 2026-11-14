@@ -3,9 +3,10 @@ import { openaiConfigured, runFactCheck, type NewsInput } from "@/lib/factcheck"
 import { fetchArticle, isHttpUrl, looksLikeBoilerplate } from "@/lib/fetch-article";
 import { getPixPost, getPixPostByPublishedId, publishedIdFromDailyMattrUrl, type PixPost } from "@/lib/pix";
 
-// Reading the articles + news searches + three or four model calls (event
-// queries, extract claims, verify, second look): usually 15–30 s.
-export const maxDuration = 60;
+// Reading the articles + news and fact-checker searches + four or five model
+// calls (event queries, extract claims, verify, second look, fact-check match):
+// usually 25–50 s.
+export const maxDuration = 120;
 
 /** Either a PIX id (PIX pages) or a news link (the "Check a news link" page). */
 type CheckBody = { pixId?: string; url?: string; force?: boolean };
