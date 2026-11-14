@@ -44,7 +44,7 @@ export function VerdictBanner({ verdict }: { verdict: Verdict }) {
   // A fact-check page's verdict is about the claim it checks, not the page.
   const subject = verdict.basis === "fact-check-page" ? "The claim" : "This news";
   return (
-    <section className={cn("rounded-xl border-2 p-5 sm:p-6", t.banner)} aria-label={`Verdict: ${t.word}`}>
+    <section className={cn("rounded-2xl border-2 p-5 sm:p-6", t.banner)} aria-label={`Verdict: ${t.word}`}>
       <div className="flex items-start gap-4">
         <Icon className="mt-0.5 size-9 shrink-0" aria-hidden />
         <div className="min-w-0">

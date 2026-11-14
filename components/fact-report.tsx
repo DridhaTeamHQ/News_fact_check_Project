@@ -117,7 +117,7 @@ export function useFactCheck() {
 
 export function FactCheckProgress({ step }: { step: number }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border bg-muted/40 p-5" aria-live="polite">
+    <div className="flex items-center gap-3 rounded-2xl border bg-muted/40 p-5" aria-live="polite">
       <Loader2 className="size-5 animate-spin text-primary" />
       <div>
         <div className="font-medium">{STEPS[step]}</div>
@@ -130,7 +130,7 @@ export function FactCheckProgress({ step }: { step: number }) {
 export function FactCheckError({ message }: { message: string }) {
   return (
     <div
-      className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+      className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
       role="alert"
     >
       {message}
@@ -152,7 +152,7 @@ export function FactReport({ report, showVerdict = true }: { report: FactCheckRe
       {showVerdict && report.verdict && <VerdictBanner verdict={report.verdict} />}
 
       {(report.pageReviews?.length > 0 || report.factChecks?.length > 0) && (
-        <section className="rounded-xl border bg-card p-5 sm:p-6">
+        <section className="rounded-2xl border bg-card p-5 sm:p-6">
           <div className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Fact-checkers</div>
           <ul className="mt-3 space-y-3">
             {report.pageReviews.map((r, i) => (
@@ -184,7 +184,7 @@ export function FactReport({ report, showVerdict = true }: { report: FactCheckRe
         </section>
       )}
 
-      <section className="rounded-xl border bg-muted/40 p-5 sm:p-6">
+      <section className="rounded-2xl border bg-muted/40 p-5 sm:p-6">
         <div className="flex items-center gap-4">
           <div
             className={cn(
@@ -298,7 +298,7 @@ export function FactReport({ report, showVerdict = true }: { report: FactCheckRe
 
       {/* Actual news: what each source reports, when our story scores low. */}
       {weak && n > 0 && (
-        <section className="rounded-xl border bg-card p-5 sm:p-6">
+        <section className="rounded-2xl border bg-card p-5 sm:p-6">
           <div className="text-xs font-bold tracking-wider text-muted-foreground uppercase">What the sources report</div>
           <ul className="mt-3 space-y-4">
             {report.sources

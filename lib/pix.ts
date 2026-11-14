@@ -12,6 +12,7 @@ export type PixPostSummary = {
   published_at: string | null;
   source_url: string | null;
   image: string | null;
+  published_id: string | null; // its number on dailymattr.com (see dailyMattrUrl)
 };
 
 export type PixPost = PixPostSummary & {
@@ -39,6 +40,7 @@ type PixRow = {
   main_image_url: string | null;
   source_image_url: string | null;
   web_pages: WebPage[] | null;
+  published_id: string | number | null;
 };
 
 export function pixConfigured(): boolean {
@@ -92,10 +94,11 @@ const toSummary = (r: PixRow): PixPostSummary => ({
   published_at: r.published_at ?? r.created_at,
   source_url: r.source_url,
   image: imageOf(r),
+  published_id: r.published_id === null || r.published_id === undefined ? null : String(r.published_id),
 });
 
 const LIST_COLS =
-  "id,headline,ai_headline,scraped_title,category,tag,published_at,created_at,source_url,main_image_url,source_image_url,web_pages";
+  "id,headline,ai_headline,scraped_title,category,tag,published_at,created_at,source_url,main_image_url,source_image_url,web_pages,published_id";
 
 const searchTerm = (q: string) => q.trim().replace(/[*,()%\\]/g, " ").replace(/\s+/g, " ").slice(0, 80);
 
@@ -136,6 +139,21 @@ export function publishedIdFromDailyMattrUrl(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** The PIX's public page on dailymattr.com. The site finds a story by its
+ * number alone and redirects to its canonical slug, so the slug here only has
+ * to be readable. */
+export function dailyMattrUrl(post: Pick<PixPostSummary, "headline" | "published_id">): string | null {
+  if (!post.published_id) return null;
+  const slug = post.headline
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/, "");
+  return `https://www.dailymattr.com/news/${slug ? `${slug}-` : ""}${post.published_id}`;
 }
 
 export async function getPixPostByPublishedId(publishedId: string): Promise<PixPost | null> {

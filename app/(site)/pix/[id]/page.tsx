@@ -8,7 +8,7 @@ import { getPixPost } from "@/lib/pix";
 
 export default function PixPage({ params }: PageProps<"/pix/[id]">) {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
       <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> All PIX news
       </Link>
@@ -40,7 +40,7 @@ async function PixDetail({ params }: { params: PageProps<"/pix/[id]">["params"] 
   return (
     <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
       <article>
-        <PixImage src={post.image} alt={post.headline} eager size={[1200, 750]} className="aspect-[16/10] w-full rounded-xl" />
+        <PixImage src={post.image} alt={post.headline} eager size={[1200, 750]} className="aspect-[16/10] w-full rounded-2xl" />
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           {post.category && <span className="font-semibold tracking-wide text-primary uppercase">{post.category}</span>}
           <span>{fmtDay(post.published_at)}</span>
@@ -72,7 +72,7 @@ async function PixDetail({ params }: { params: PageProps<"/pix/[id]">["params"] 
         )}
       </article>
 
-      <aside className="lg:sticky lg:top-20">
+      <aside className="lg:sticky lg:top-6">
         <PixFactCheck pixId={post.id} />
       </aside>
     </div>

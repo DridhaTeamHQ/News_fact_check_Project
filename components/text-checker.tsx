@@ -1,427 +1,594 @@
 "use client";
 
-import { useRef, useState } from "react";
-import Link from "next/link";
-import { ChevronDown, ExternalLink, Loader2, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { FactCheckError, FactReport, fmtDate } from "@/components/fact-report";
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  ArrowUp,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  ImagePlus,
+  MessageCircleQuestion,
+  Sparkles,
+  Square,
+  SquarePen,
+} from "lucide-react";
 import { PixImage } from "@/components/pix-image";
-import { VERDICT_THEME } from "@/components/verdict";
-import type { TextCheckResult, TextLink } from "@/lib/text-check";
-import type { VerdictLabel } from "@/lib/verdict";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { BOT_NAME, CHECK_FAILED, type ChatMessage, type ChatQuestion, type ChatReply } from "@/lib/chat-text";
 import { cn } from "@/lib/utils";
 
-const STEPS = [
+/* "Ask NIA": a chat with the fact-check assistant. Paste a message or a news
+ * link, get a True / False answer with its sources, then ask follow-up
+ * questions about that news. Every reply comes from /api/chat-demo, which
+ * builds the same messages as the chat API (/api/v1/chat). The conversation
+ * is gone on reload. */
+
+const MIN_LENGTH = 15; // shorter messages get "send me the whole message"
+const MAX_LENGTH = 5000;
+
+/** What the assistant says it is doing while a check runs (time-based: the
+ * API reports no progress). */
+const TEXT_STEPS = [
   "Reading the message…",
-  "Searching DailyMattr PIX…",
-  "Finding other outlets and fact-checkers…",
+  "Searching DailyMattr…",
+  "Asking fact-checkers…",
   "Checking every claim…",
-  "Searching the news for unconfirmed claims…",
-  "Writing up the real news…",
+  "Searching the news…",
+  "Writing the reply…",
 ];
+const LINK_STEPS = ["Reading the article…", "Finding other outlets…", "Checking every claim…", "Searching the news…"];
+const ANSWER_STEPS = ["Reading the sources…", "Writing the answer…"];
 
-const EXAMPLE =
-  "🚨🚨 BIG BREAKING 🚨🚨 PM Modi to announce DEMONETISATION of ₹500 notes from midnight tomorrow!! All ₹500 notes will become INVALID. Exchange them at your nearest bank before Friday or LOSE your money ❌❌ RBI circular already issued. Share with all family groups 🙏🙏 Forward to 10 groups";
+type UserItem = { kind: "user"; id: string; text: string };
+type BotItem =
+  | { kind: "bot"; id: string; message: ChatMessage }
+  | { kind: "questions"; id: string; questions: ChatQuestion[]; news: number };
+type Item = UserItem | BotItem;
 
-const KIND_LABEL: Record<TextLink["kind"], string> = {
-  dailymattr: "DailyMattr PIX",
-  "fact-check": "Fact-check",
-  outlet: "News report",
-};
+/** The conversation as turns: the reader's message, then everything the
+ * assistant said in reply. */
+type Turn = { id: string; user: UserItem } | { id: string; bot: BotItem[] };
 
-/** The reply's opening, by verdict: the answer first, in plain words. */
-const OPENING: Record<VerdictLabel, { title: string; lead: React.ReactNode }> = {
-  false: {
-    title: "🎯 Hey, you’ve spotted fake news!",
-    lead: (
-      <>
-        This message is <strong>not real</strong>.
-      </>
-    ),
-  },
-  "partly-false": {
-    title: "⚠️ Careful: parts of this are fake",
-    lead: (
-      <>
-        Some of what this message says is <strong>wrong</strong>.
-      </>
-    ),
-  },
-  unverified: {
-    title: "🤔 We couldn’t confirm this",
-    lead: (
-      <>
-        No trusted source reports this, so <strong>don’t trust it yet</strong>.
-      </>
-    ),
-  },
-  "mostly-true": {
-    title: "✅ This news is mostly real",
-    lead: (
-      <>
-        Most of it <strong>matches trusted reports</strong>.
-      </>
-    ),
-  },
-  true: {
-    title: "✅ This news is real",
-    lead: (
-      <>
-        Trusted sources <strong>report the same thing</strong>.
-      </>
-    ),
-  },
-};
+function toTurns(items: Item[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const item of items) {
+    const last = turns[turns.length - 1];
+    if (item.kind === "user") turns.push({ id: item.id, user: item });
+    else if (last && "bot" in last) last.bot.push(item);
+    else turns.push({ id: item.id, bot: [item] });
+  }
+  return turns;
+}
 
-const TRUE_ADVICE = "It’s safe to share. Read the full story from the sources below.";
+const now = () => Date.now();
+const newId = () => `${now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+const isLink = (text: string) => /^(https?:\/\/|www\.)\S+\.\S+$/i.test(text.trim());
+/** Short messages are fine once there's news in the chat ("why?", "explain"). */
+const canSend = (text: string, hasNews = false) =>
+  isLink(text) || text.trim().length >= (hasNews ? 2 : MIN_LENGTH);
+/** Reads like a question about the news in the chat (the API decides). */
+const QUESTION_LIKE =
+  /\?\s*$|^(who|whom|whose|what|what's|whats|why|how|when|where|which|explain|tell|describe|summari[sz]e|elaborate|more|details?|meaning|define|is|are|was|were|do|does|did|can|could|will|would|should|has|have)\b/i;
 
-/** "Check a message": paste any text, get True / False with sources, and the
- * real news when it's false. */
 export function TextChecker() {
+  const [items, setItems] = useState<Item[]>([]);
   const [text, setText] = useState("");
-  const [checked, setChecked] = useState("");
-  const [result, setResult] = useState<TextCheckResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(0);
-  const inFlight = useRef(false);
-  const value = text.trim();
+  const [pending, setPending] = useState<{ startedAt: number; steps: string[] } | null>(null);
+  const [asked, setAsked] = useState<ReadonlySet<string>>(() => new Set()); // question ids already asked
+  // How many news items this chat has checked: typed questions are about the
+  // latest one, and only its question list can still be used.
+  const [news, setNews] = useState(0);
+  const chatId = useRef<string | null>(null); // the API's userId for this chat
+  const [focus, setFocus] = useState<{ id: string; block: ScrollLogicalPosition } | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const list = useRef<HTMLDivElement>(null);
 
-  async function run(force = false, message = value) {
-    if (inFlight.current || !message) return;
-    inFlight.current = true;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setChecked(message);
-    setStep(0);
-    const timer = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 7_000);
+  // Show a new message: the reader's at the bottom, the assistant's reply from its top.
+  useEffect(() => {
+    if (!focus) return;
+    list.current
+      ?.querySelector(`[data-item="${focus.id}"]`)
+      ?.scrollIntoView({ block: focus.block, behavior: "smooth" });
+  }, [focus]);
+
+  /** Show the reader's message, ask the chat API, show its replies. */
+  async function talk(said: string, body: Record<string, unknown>, steps: string[]) {
+    const user: Item = { kind: "user", id: newId(), text: said };
+    setItems((all) => [...all, user]);
+    setPending({ startedAt: now(), steps });
+    setFocus({ id: user.id, block: "end" });
+
+    const controller = new AbortController();
+    abort.current = controller;
+    let reply: ChatReply;
     try {
-      const res = await fetch("/api/check-text", {
+      const res = await fetch("/api/chat-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: message, force }),
+        body: JSON.stringify({ ...body, messageId: user.id, userId: (chatId.current ??= `web-${newId()}`) }),
+        signal: controller.signal,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setResult(data);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      clearInterval(timer);
-      inFlight.current = false;
-      setLoading(false);
+      reply = Array.isArray(data?.messages) ? data : { kind: "error", messages: [{ text: CHECK_FAILED, replyTo: user.id }] };
+    } catch {
+      const stopped = controller.signal.aborted;
+      reply = { kind: "error", messages: [{ text: stopped ? "Stopped." : CHECK_FAILED, replyTo: user.id }] };
     }
+    if (abort.current !== controller) return; // "New chat" cleared this conversation
+    abort.current = null;
+
+    // New news replaces the chat's earlier news (the API forgets it too).
+    const seq = reply.kind === "check" ? news + 1 : news;
+    if (seq !== news) setNews(seq);
+    const bots: Item[] = reply.messages.map((m) => ({ kind: "bot", id: newId(), message: m }));
+    if (reply.questions?.length) bots.push({ kind: "questions", id: newId(), questions: reply.questions, news: seq });
+    setItems((all) => [...all, ...bots]);
+    setPending(null);
+    if (bots[0]) setFocus({ id: bots[0].id, block: "start" });
   }
 
+  function send(message = text.trim()) {
+    if (pending || !canSend(message, news > 0)) return;
+    setText("");
+    const followUp = news > 0 && !isLink(message) && (message.length < MIN_LENGTH || QUESTION_LIKE.test(message));
+    void talk(message, { text: message }, isLink(message) ? LINK_STEPS : followUp ? ANSWER_STEPS : TEXT_STEPS);
+  }
+
+  /** A follow-up question. The list stays where it is, under its check: scroll
+   * back to it to ask another. */
+  function ask(question: ChatQuestion) {
+    if (pending) return;
+    setAsked((all) => new Set(all).add(question.id));
+    void talk(question.title, { type: "question", questionId: question.id }, ANSWER_STEPS);
+  }
+
+  function newChat() {
+    const running = abort.current;
+    abort.current = null;
+    running?.abort();
+    setItems([]);
+    setText("");
+    setPending(null);
+    setAsked(new Set());
+    setNews(0);
+    chatId.current = null; // a new chat starts with no news
+    input.current?.focus();
+  }
+
+  const empty = items.length === 0 && !pending;
+
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-10">
-      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Is this news real?</h1>
-      <p className="mt-2 text-muted-foreground">
-        Paste a message, a forward or any news text. We check it against DailyMattr PIX, fact-checkers and other news
-        outlets, and tell you whether it&apos;s true or false.
-      </p>
-
-      <form
-        className="mt-6 rounded-xl border bg-card p-4 sm:p-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run();
-        }}
-      >
-        <label htmlFor="message" className="text-sm font-medium">
-          Message to check
-        </label>
-        <textarea
-          id="message"
-          rows={6}
-          maxLength={5000}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              run();
-            }
-          }}
-          placeholder="Paste the message here…"
-          className="mt-2 block w-full resize-y rounded-lg border bg-background px-3 py-2 text-[15px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setText(EXAMPLE)}
-            className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            Try an example forward
-          </button>
-          <Button type="submit" disabled={loading || value.length < 15} className="h-10">
-            {loading ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Check
-          </Button>
+    <div className="relative flex h-full flex-col">
+      {empty && <ThemeToggle className="absolute top-3 right-3 z-10 text-muted-foreground hover:text-foreground" />}
+      {!empty && (
+        <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <BotAvatar />
+            <span className="font-semibold">{BOT_NAME}</span>
+            <span className="truncate text-muted-foreground">Fact-check assistant</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <ThemeToggle className="text-muted-foreground hover:text-foreground" />
+            <button
+              type="button"
+              onClick={newChat}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-sm font-medium transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <SquarePen className="size-4" aria-hidden /> New chat
+            </button>
+          </div>
         </div>
-      </form>
+      )}
 
-      <div className="mt-8 space-y-5">
-        {loading && (
-          <div className="flex items-center gap-3 rounded-xl border bg-muted/40 p-5" aria-live="polite">
-            <Loader2 className="size-5 animate-spin text-primary" />
-            <div>
-              <div className="font-medium">{STEPS[step]}</div>
-              <div className="text-sm text-muted-foreground">Usually takes 30–70 seconds.</div>
+      {/* The welcome, until the first message; then the conversation */}
+      <div
+        ref={list}
+        className={cn("min-h-0 overflow-y-auto", empty ? "flex flex-[1_1_0] flex-col justify-end" : "flex-1")}
+      >
+        {empty ? (
+          <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-6 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+              <Sparkles className="size-6" aria-hidden />
             </div>
+            <h1 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">Is this news real?</h1>
+            <p className="mx-auto mt-2 max-w-md text-balance text-muted-foreground">
+              Paste a forwarded message or a news link. {BOT_NAME} checks the facts and tells you if it&apos;s true or
+              false.
+            </p>
+          </div>
+        ) : (
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+            {toTurns(items).map((turn) => (
+              <div key={turn.id} data-item={turn.id} className="scroll-mt-4 scroll-mb-4">
+                {"user" in turn ? (
+                  <UserMessage text={turn.user.text} />
+                ) : (
+                  <BotTurn>
+                    {turn.bot.map((item) =>
+                      item.kind === "bot" ? (
+                        <BotMessage key={item.id} message={item.message} />
+                      ) : (
+                        <Questions
+                          key={item.id}
+                          questions={item.questions}
+                          onAsk={ask}
+                          asked={asked}
+                          disabled={pending !== null || item.news !== news}
+                          stale={item.news !== news}
+                        />
+                      ),
+                    )}
+                  </BotTurn>
+                )}
+              </div>
+            ))}
+            {pending && (
+              <BotTurn>
+                <Typing startedAt={pending.startedAt} steps={pending.steps} />
+              </BotTurn>
+            )}
           </div>
         )}
-        {error && <FactCheckError message={error} />}
-        {result && <TextResult result={result} message={checked} onRecheck={() => run(true, checked)} />}
       </div>
+
+      <div className={cn("mx-auto w-full shrink-0 px-4", empty ? "max-w-2xl" : "max-w-3xl pb-3")}>
+        <Composer
+          inputRef={input}
+          value={text}
+          onChange={setText}
+          onSubmit={() => send()}
+          onStop={() => abort.current?.abort()}
+          busy={pending !== null}
+          hasNews={news > 0}
+          roomy={empty}
+        />
+        {!empty && (
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            Checks are automated. Open the sources to confirm.
+          </p>
+        )}
+      </div>
+
+      {/* Keeps the welcome and the message box in the middle of the screen */}
+      {empty && <div className="flex-[1_1_0]" />}
     </div>
   );
 }
 
-function TextResult({ result, message, onRecheck }: { result: TextCheckResult; message: string; onRecheck: () => void }) {
-  const [details, setDetails] = useState(false);
-  const { report, realNews, links, pix, scores } = result;
-  const verdict = report.verdict;
-  const t = VERDICT_THEME[verdict.label];
-  const Icon = t.icon;
-  const opening = OPENING[verdict.label];
-  const confirmed = verdict.label === "true" || verdict.label === "mostly-true";
-  const advice = confirmed ? [TRUE_ADVICE] : (realNews?.advice ?? []);
-  // "Read: …" buttons, one per source the real news cites.
-  const reads = (realNews?.points ?? [])
-    .filter((p): p is typeof p & { link: number } => p.link !== null && Boolean(links[p.link]))
-    .filter((p, i, all) => all.findIndex((q) => q.link === p.link) === i);
+/* ---------- message text ---------- */
 
+const INLINE = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g;
+
+/** The chat API's light markup: *bold*, _italic_ and ~strike~; blank lines
+ * are paragraph breaks. */
+function RichText({ text }: { text: string }) {
   return (
     <>
-      {/* The answer, first */}
-      <section className={cn("overflow-hidden rounded-2xl border-2", t.banner)} aria-label={`Verdict: ${t.word}`}>
-        <div className="flex items-center gap-3 px-5 pt-5 sm:px-6">
-          <Icon className="size-10 shrink-0" aria-hidden />
-          <div>
-            <div className="text-xs font-bold tracking-wider uppercase opacity-80">Verdict</div>
-            <div className="text-4xl leading-none font-extrabold tracking-tight uppercase">{t.word}</div>
-          </div>
-        </div>
-
-        <div className="space-y-3 px-5 pt-4 pb-5 sm:px-6">
-          {/* The message this answers, quoted like a chat reply */}
-          <div className="rounded-lg border-l-4 border-current/40 bg-background/60 px-3 py-2 text-sm">
-            <div className="text-xs font-semibold opacity-70">Your message</div>
-            <p className="line-clamp-2 opacity-80">{message}</p>
-          </div>
-
-          <p className="text-xl font-bold leading-snug">{opening.title}</p>
-          <p className="text-[15px] leading-relaxed">
-            {opening.lead} {realNews?.headline}
-          </p>
-          <p className="text-sm leading-relaxed opacity-80">{verdict.reason}</p>
-
-          {advice.length > 0 && (
-            <ul className="space-y-1.5">
-              {advice.map((a, i) => (
-                <li key={i} className="flex gap-2 text-[15px] font-semibold leading-snug">
-                  <span aria-hidden>✅</span>
-                  <span>{a}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <Meter
-              label="Fake"
-              value={scores.fakePercent}
-              max={100}
-              unit="%"
-              bar="bg-red-600 dark:bg-red-500"
-              note={
-                scores.claims
-                  ? `${scores.contradicted + scores.unconfirmed} of ${scores.claims} claim${scores.claims === 1 ? "" : "s"} false or reported nowhere`
-                  : "No checkable claims"
-              }
-            />
-            <Meter
-              label="Fact score"
-              value={scores.factScore}
-              max={100}
-              unit="/100"
-              bar={factBar(scores.factScore)}
-              note={scores.factScore === null ? "Not scored" : "How well trusted sources back it up"}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Here's what's actually happening, when the message isn't true */}
-      {realNews && realNews.points.length > 0 && (
-        <section className="overflow-hidden rounded-2xl border bg-card">
-          <div className="p-5 sm:p-6">
-            <p className="text-lg font-semibold">
-              Here&apos;s what&apos;s <strong>actually</strong> happening 👇
-            </p>
-            <ul className="mt-3 space-y-2.5">
-              {realNews.points.map((p, i) => (
-                <li key={i} className="flex gap-2 text-[15px] leading-relaxed">
-                  <span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-foreground/60" aria-hidden />
-                  <span>{p.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {reads.length > 0 && (
-            <div className="divide-y border-t">
-              {reads.map((p) => (
-                <SourceLink
-                  key={p.link}
-                  link={links[p.link]}
-                  className="flex items-center justify-center gap-2 px-4 py-3 text-[15px] font-medium text-emerald-700 hover:bg-muted hover:no-underline dark:text-emerald-400"
-                >
-                  <ExternalLink className="size-4 shrink-0" />
-                  Read: {p.label || links[p.link].source}
-                </SourceLink>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* DailyMattr PIX on this news */}
-      {pix.length > 0 && (
-        <section>
-          <h2 className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-            {confirmed ? "Reported on DailyMattr" : "On DailyMattr"}
-          </h2>
-          <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {pix.map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/pix/${p.id}`}
-                  className="flex gap-3 overflow-hidden rounded-xl border bg-card p-2 transition-colors hover:bg-muted"
-                >
-                  <PixImage src={p.image} alt="" size={[160, 160]} className="size-20 shrink-0 rounded-lg" />
-                  <div className="min-w-0 py-1">
-                    <p className="line-clamp-3 text-sm font-semibold leading-snug">{p.headline}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      DailyMattr PIX{p.published_at ? ` · ${fmtDate(p.published_at)}` : ""}
-                      {!p.sameStory && " · related"}
-                    </p>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* Every source, DailyMattr first */}
-      {links.some((l) => l.kind !== "dailymattr") && (
-        <section className="rounded-xl border bg-card p-5 sm:p-6">
-          <h2 className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-            {confirmed ? "Confirmed by" : "Sources"}
-          </h2>
-          <ol className="mt-3 space-y-3">
-            {links
-              .filter((l) => l.kind !== "dailymattr")
-              .map((l) => (
-                <li key={l.url} className="text-[15px]">
-                  <SourceLink link={l} className="inline-flex items-start gap-1 font-semibold">
-                    {l.title} <ExternalLink className="mt-1 size-3.5 shrink-0" />
-                  </SourceLink>
-                  <div className="text-sm text-muted-foreground">
-                    {l.source} · {KIND_LABEL[l.kind]}
-                    {l.rating && ` · rated “${l.rating}”`}
-                  </div>
-                </li>
-              ))}
-          </ol>
-        </section>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setDetails((d) => !d)}
-          aria-expanded={details}
-          className="inline-flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-semibold shadow-xs transition-colors hover:bg-muted"
-        >
-          How this was checked
-          <ChevronDown className={cn("size-4 transition-transform", details && "rotate-180")} />
-        </button>
-        {result.cached && (
-          <span className="text-xs text-muted-foreground">
-            Saved result from {fmtDate(report.checked_at)}.{" "}
-            <button type="button" onClick={onRecheck} className="underline underline-offset-4 hover:text-foreground">
-              Check again
-            </button>
-          </span>
-        )}
-      </div>
-      {details && <FactReport report={report} showVerdict={false} />}
+      {text.split(/\n{2,}/).map((para, p) => (
+        <p key={p} className="mt-3 first:mt-0">
+          {para.split("\n").map((line, l) => (
+            <Fragment key={l}>
+              {l > 0 && <br />}
+              {line.split(INLINE).map((part, k) => {
+                const inner = part.slice(1, -1);
+                if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) return <strong key={k}>{inner}</strong>;
+                if (part.length > 2 && part.startsWith("_") && part.endsWith("_")) return <em key={k}>{inner}</em>;
+                if (part.length > 2 && part.startsWith("~") && part.endsWith("~")) return <s key={k}>{inner}</s>;
+                return <Fragment key={k}>{part}</Fragment>;
+              })}
+            </Fragment>
+          ))}
+        </p>
+      ))}
     </>
   );
 }
 
-const factBar = (score: number | null) =>
-  score === null
-    ? "bg-zinc-400"
-    : score >= 85
-      ? "bg-emerald-600 dark:bg-emerald-500"
-      : score >= 65
-        ? "bg-teal-600 dark:bg-teal-500"
-        : score >= 40
-          ? "bg-amber-500"
-          : "bg-red-600 dark:bg-red-500";
+/* ---------- messages ---------- */
 
-function Meter({
-  label,
-  value,
-  max,
-  unit,
-  bar,
-  note,
-}: {
-  label: string;
-  value: number | null;
-  max: number;
-  unit: string;
-  bar: string;
-  note: string;
-}) {
+function BotAvatar() {
   return (
-    <div className="rounded-xl bg-background/70 p-3 text-foreground">
-      <div className="text-xs font-bold tracking-wider text-muted-foreground uppercase">{label}</div>
-      <div className="mt-0.5 text-3xl font-extrabold tabular-nums">
-        {value ?? "–"}
-        {value !== null && <span className="text-base font-semibold text-muted-foreground">{unit}</span>}
+    <span
+      className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+      aria-hidden
+    >
+      <Sparkles className="size-4" />
+    </span>
+  );
+}
+
+/** Everything the assistant says in reply to one message, under its name. */
+function BotTurn({ children }: { children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2.5 text-sm font-semibold">
+        <BotAvatar />
+        {BOT_NAME}
       </div>
-      <div
-        className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-valuenow={value ?? undefined}
-      >
-        <div className={cn("h-full rounded-full", bar)} style={{ width: `${value === null ? 0 : (100 * value) / max}%` }} />
-      </div>
-      <div className="mt-1.5 text-xs leading-snug text-muted-foreground">{note}</div>
+      <div className="mt-2 space-y-4 sm:pl-9.5">{children}</div>
     </div>
   );
 }
 
-/** DailyMattr PIX open in this app; everything else in a new tab. */
-function SourceLink({ link, className, children }: { link: TextLink; className?: string; children: React.ReactNode }) {
-  if (link.kind === "dailymattr") {
-    return (
-      <Link href={link.url} className={cn("hover:underline", className)}>
-        {children}
-      </Link>
-    );
+function UserMessage({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 500;
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-chat-user px-4 py-2.5 text-[15px] leading-relaxed text-chat-user-foreground sm:max-w-[75%]">
+        <p className={cn("break-words whitespace-pre-wrap", long && !open && "line-clamp-8")}>{text}</p>
+        {long && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="mt-1 text-sm font-medium underline underline-offset-2"
+          >
+            {open ? "Show less" : "Show more"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BotMessage({ message }: { message: ChatMessage }) {
+  return (
+    <div className="space-y-3">
+      {message.image && (
+        <PixImage src={message.image} alt="" size={[720, 405]} className="aspect-video w-full max-w-md rounded-xl border" />
+      )}
+      <div className="text-[15px] leading-relaxed break-words">
+        <RichText text={message.text} />
+      </div>
+      {message.buttons && message.buttons.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {message.buttons.map((b) => (
+            <a
+              key={b.url}
+              href={b.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border bg-card px-3.5 text-sm font-medium text-primary transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {b.label}
+              <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Follow-up questions about the checked news, behind an open / close
+ * button so they don't crowd the reply. Sent once per check and usable until
+ * newer news is checked; questions already asked are ticked. */
+function Questions({
+  questions,
+  onAsk,
+  asked,
+  disabled,
+  stale,
+}: {
+  questions: ChatQuestion[];
+  onAsk: (q: ChatQuestion) => void;
+  asked: ReadonlySet<string>;
+  disabled: boolean;
+  /** Newer news has come since: these questions are about forgotten news. */
+  stale: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const box = useRef<HTMLDivElement>(null);
+  // Opened at the bottom of the chat: bring the questions into view.
+  useEffect(() => {
+    if (open) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [open]);
+  if (stale) {
+    return <p className="text-xs text-muted-foreground">Follow-up questions here were about earlier news.</p>;
   }
   return (
-    <a href={link.url} target="_blank" rel="noopener noreferrer" className={cn("hover:underline", className)}>
-      {children}
-    </a>
+    <div ref={box} className="scroll-mb-4">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={listId}
+        className={cn(
+          "inline-flex h-9 max-w-full items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+          open ? "border-primary/50 bg-accent text-accent-foreground" : "bg-card",
+        )}
+      >
+        <MessageCircleQuestion className="size-4 shrink-0 text-primary" aria-hidden />
+        <span className="truncate">Ask a follow-up</span>
+        <span className="text-xs text-muted-foreground tabular-nums">{questions.length}</span>
+        <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {open && (
+        <ul id={listId} className="mt-2 grid gap-1.5 sm:grid-cols-2 sm:gap-2">
+          {questions.map((q) => (
+            <li key={q.id} className="min-w-0">
+              <button
+                type="button"
+                onClick={() => onAsk(q)}
+                disabled={disabled}
+                className="flex h-full w-full items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2 text-left transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:items-start sm:py-2.5"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{q.title}</span>
+                  {/* Phones: the title alone, to keep the list short. */}
+                  <span className="hidden text-xs text-muted-foreground sm:block">{q.description}</span>
+                </span>
+                {asked.has(q.id) ? (
+                  <Check className="size-4 shrink-0 text-primary sm:mt-0.5" aria-label="Asked" />
+                ) : (
+                  <ArrowUpRight className="size-4 shrink-0 text-muted-foreground sm:mt-0.5" aria-hidden />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** While a check runs: three dots, and what the check is doing right now. */
+function Typing({ startedAt, steps }: { startedAt: number; steps: string[] }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setStep(Math.min(Math.floor((now() - startedAt) / 7_000), steps.length - 1)), 1_000);
+    return () => clearInterval(timer);
+  }, [startedAt, steps]);
+  return (
+    <div className="flex h-7 items-center gap-3 text-sm text-muted-foreground">
+      <span className="flex items-center gap-1" aria-hidden>
+        {[0, 150, 300].map((delay) => (
+          <span
+            key={delay}
+            className="size-1.5 animate-bounce rounded-full bg-primary"
+            style={{ animationDelay: `${delay}ms`, animationDuration: "1s" }}
+          />
+        ))}
+      </span>
+      <span className="animate-pulse motion-reduce:animate-none" aria-live="polite">
+        {steps[step]}
+      </span>
+    </div>
+  );
+}
+
+/* ---------- composer ---------- */
+
+function Composer({
+  inputRef,
+  value,
+  onChange,
+  onSubmit,
+  onStop,
+  busy,
+  hasNews,
+  roomy,
+}: {
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  onStop: () => void;
+  busy: boolean;
+  hasNews: boolean; // there's news in the chat: short questions about it are fine
+  roomy: boolean; // the welcome screen: a taller box
+}) {
+  const [soon, setSoon] = useState(false); // the "photos are coming soon" note
+  const length = value.trim().length;
+  const hint = soon
+    ? "Checking photos is coming soon. Send the text or a news link."
+    : isLink(value)
+      ? "News link: the article is checked against other outlets."
+      : !hasNews && length > 0 && length < MIN_LENGTH
+        ? "Send the whole message: this is too short to check."
+        : value.length > MAX_LENGTH - 500
+          ? `${value.length.toLocaleString("en-IN")} / ${MAX_LENGTH.toLocaleString("en-IN")} characters`
+          : null;
+
+  // Grow with the text, up to about six lines; refit when the width changes.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.height = "auto";
+      const full = el.scrollHeight;
+      el.style.height = `${Math.min(full, 160)}px`;
+      el.style.overflowY = full > 160 ? "auto" : "hidden";
+    };
+    fit();
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [inputRef, value]);
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+      className="rounded-2xl border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-primary/60 focus-within:ring-3 focus-within:ring-ring/15"
+    >
+      <label htmlFor="message" className="sr-only">
+        Message
+      </label>
+      <textarea
+        ref={inputRef}
+        id="message"
+        rows={1}
+        maxLength={MAX_LENGTH}
+        value={value}
+        onChange={(e) => {
+          setSoon(false);
+          onChange(e.target.value);
+        }}
+        onPaste={(e) => {
+          // A pasted picture: say photos can't be checked yet.
+          if ([...e.clipboardData.files].some((f) => f.type.startsWith("image/"))) {
+            e.preventDefault();
+            setSoon(true);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            onSubmit();
+          }
+        }}
+        placeholder={hasNews ? "Ask about this news, or paste new news" : "Paste a message or a news link"}
+        className={cn(
+          "block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[15px] leading-6 outline-none placeholder:text-muted-foreground",
+          roomy && "min-h-18",
+        )}
+      />
+      <div className="flex items-center gap-2 px-2.5 pt-1 pb-2.5">
+        <button
+          type="button"
+          onClick={() => setSoon(true)}
+          aria-label="Add a photo (coming soon)"
+          title="Add a photo (coming soon)"
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ImagePlus className="size-5" />
+        </button>
+        <p className="min-w-0 flex-1 text-xs leading-tight text-muted-foreground" aria-live="polite">
+          {hint}
+        </p>
+        {busy ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Stop checking"
+            title="Stop checking"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity outline-none hover:opacity-85 focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <Square className="size-3.5 fill-current" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!canSend(value, hasNews)}
+            aria-label="Send"
+            title="Send"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity outline-none hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-35"
+          >
+            <ArrowUp className="size-5" />
+          </button>
+        )}
+      </div>
+    </form>
   );
 }

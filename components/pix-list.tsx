@@ -69,7 +69,7 @@ export function PixList({ posts, verdicts }: { posts: PixPostSummary[]; verdicts
             <li key={p.id}>
               <Link
                 href={`/pix/${p.id}`}
-                className="group flex h-full flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="group flex h-full flex-col overflow-hidden rounded-2xl border bg-card transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <PixImage src={p.image} alt="" eager={i < 3} className="aspect-[4/3] w-full" />
                 <div className="flex flex-1 flex-col p-4">

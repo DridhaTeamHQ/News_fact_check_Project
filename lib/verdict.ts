@@ -20,7 +20,11 @@ export type VerdictLabel = "true" | "mostly-true" | "partly-false" | "false" | "
 export type Verdict = {
   label: VerdictLabel;
   reason: string; // one plain sentence
-  basis: "claims" | "fact-check" | "fact-check-page";
+  /** "trusted-outlet": a checked link is a genuine article on a recognised
+   * outlet's own site, and nothing contradicts it, though no other outlet has
+   * covered it yet (lib/news-check.ts). */
+  basis: "claims" | "fact-check" | "fact-check-page" | "trusted-outlet";
+  publisher?: string; // with "trusted-outlet": the outlet, e.g. "BBC"
 };
 
 type Claim = { claim: string; verdict: "supported" | "partially-supported" | "unsupported" | "contradicted" };

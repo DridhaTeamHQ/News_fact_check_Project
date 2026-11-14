@@ -128,6 +128,7 @@ const OUTLETS: Record<string, string> = {
   "indiatoday.in": "India Today",
   "reuters.com": "Reuters",
   "bbc.com": "BBC",
+  "bbc.co.uk": "BBC",
   "aljazeera.com": "Al Jazeera",
   "dawn.com": "Dawn",
   "timesnownews.com": "Times Now",
@@ -167,6 +168,23 @@ function isKnownOutlet(url: string, name: string): boolean {
     return Boolean(OUTLETS[host] ?? OUTLETS[host.split(".").slice(-2).join(".")]);
   } catch {
     return false;
+  }
+}
+
+/** The recognised news outlet whose own site `url` is on ("BBC" for
+ * www.bbc.com/…), by the link's address alone; null for any other site. */
+export function knownOutletOf(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
+    const labels = host.split(".");
+    // The site itself, or a subdomain of it (news.bbc.co.uk → bbc.co.uk).
+    for (let i = 0; i < labels.length - 1; i++) {
+      const name = OUTLETS[labels.slice(i).join(".")];
+      if (name) return name;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 

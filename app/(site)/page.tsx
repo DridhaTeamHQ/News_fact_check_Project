@@ -20,7 +20,7 @@ const PAGE_SIZE = 12;
 
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:py-10">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
       <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">PIX news</h1>
       <p className="mt-1 text-muted-foreground">See whether each PIX is true or false. Open one for its full check, or check every story on a page at once.</p>
       <Suspense fallback={<GridSkeleton />}>
@@ -63,13 +63,13 @@ async function PixGrid({ searchParams }: { searchParams: PageProps<"/">["searchP
           <label htmlFor="q" className="sr-only">
             Search PIX headlines
           </label>
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             id="q"
             name="q"
             defaultValue={q}
             placeholder="Search PIX headlines…"
-            className="h-10 w-full rounded-lg border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 w-full rounded-xl border bg-card pr-3 pl-10 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </form>
         <p className="text-sm text-muted-foreground tabular-nums">
@@ -92,14 +92,14 @@ async function PixGrid({ searchParams }: { searchParams: PageProps<"/">["searchP
 }
 
 function Notice({ children }: { children: React.ReactNode }) {
-  return <div className="mt-6 rounded-xl border bg-muted/40 p-6 text-sm text-muted-foreground">{children}</div>;
+  return <div className="mt-6 rounded-2xl border bg-muted/40 p-6 text-sm text-muted-foreground">{children}</div>;
 }
 
 function GridSkeleton() {
   return (
     <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3" aria-hidden>
       {Array.from({ length: 6 }, (_, i) => (
-        <li key={i} className="overflow-hidden rounded-xl border bg-card">
+        <li key={i} className="overflow-hidden rounded-2xl border bg-card">
           <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
           <div className="space-y-2 p-4">
             <div className="h-4 w-11/12 animate-pulse rounded bg-muted" />

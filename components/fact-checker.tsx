@@ -14,7 +14,7 @@ export function FactChecker() {
   const value = url.trim();
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-10">
+    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
       <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Check a news link</h1>
       <p className="mt-2 text-muted-foreground">
         Paste a DailyMattr news link or any news article link. Every claim is checked against the original article and
@@ -22,7 +22,7 @@ export function FactChecker() {
       </p>
 
       <form
-        className="mt-6 rounded-xl border bg-card p-4 sm:p-6"
+        className="mt-6 rounded-2xl border bg-card p-4 sm:p-6"
         onSubmit={(e) => {
           e.preventDefault();
           if (value) run({ url: value });
@@ -33,7 +33,7 @@ export function FactChecker() {
         </label>
         <div className="mt-2 flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Link2 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Link2 className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               id="url"
               type="url"
@@ -42,10 +42,10 @@ export function FactChecker() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://www.dailymattr.com/news/…"
-              className="h-10 w-full rounded-lg border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-11 w-full rounded-xl border bg-background pr-3 pl-10 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
-          <Button type="submit" disabled={loading || !value} className="h-10">
+          <Button type="submit" disabled={loading || !value} className="h-11 px-4">
             {loading ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Check
           </Button>
         </div>
@@ -56,7 +56,7 @@ export function FactChecker() {
         {error && <FactCheckError message={error} />}
         {report && (
           <>
-            <div className="rounded-xl border bg-card p-4">
+            <div className="rounded-2xl border bg-card p-4">
               <div className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
                 {report.pixId ? "Checked PIX" : "Checked article"}
               </div>
