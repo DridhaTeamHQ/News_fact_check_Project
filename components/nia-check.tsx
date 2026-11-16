@@ -46,6 +46,7 @@ import {
   type PageClaim,
   type RelatedPix,
 } from "@/lib/chat-text";
+import { logoSite } from "@/lib/outlets";
 import { cn } from "@/lib/utils";
 
 /* "Fact check by NIA": paste a forward or a news link, press Fact check, get
@@ -1015,6 +1016,7 @@ function Result({
             </div>
           )}
           <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{check.reason}</p>
+          {sources.length > 0 && <SourceStack sources={sources} />}
         </div>
         {score !== null && <ScoreRing value={score} color={t.ring} label={scoreLabel} />}
       </header>
@@ -1556,6 +1558,48 @@ function ClaimItem({ claim, index }: { claim: PageClaim; index: number }) {
 
 /* ---------- sources ---------- */
 
+const STACKED_LOGOS = 4;
+
+/** Under the verdict, as on Perplexity: a few overlapping outlet logos and
+ * "N sources". It jumps to the source cards at the bottom of the result. */
+function SourceStack({ sources }: { sources: ChatCheck["sources"] }) {
+  // One logo per outlet: fact-checkers first (they weigh most in the
+  // verdict), then outlets with a real logo before letter-only ones.
+  const rank = (s: ChatCheck["sources"][number]) =>
+    (s.kind === "fact-check" ? 2 : 0) + (logoSite(s.url, s.source) ? 1 : 0);
+  const outlets = [...sources]
+    .sort((a, b) => rank(b) - rank(a))
+    .filter((s, i, all) => all.findIndex((t) => t.source.toLowerCase() === s.source.toLowerCase()) === i)
+    .slice(0, STACKED_LOGOS);
+  const names = outlets.map((s) => s.source).join(", ");
+  return (
+    <a
+      href="#nia-sources"
+      onClick={(e) => {
+        e.preventDefault();
+        document.getElementById("nia-sources")?.scrollIntoView({ behavior: smooth(), block: "start" });
+      }}
+      title={`Checked against ${names}${sources.length > outlets.length ? " and more" : ""}`}
+      className="group mt-4 inline-flex items-center gap-2.5 rounded-full border bg-background/60 py-1 pr-3.5 pl-1 backdrop-blur-sm transition-colors outline-none hover:border-foreground/25 hover:bg-background focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="flex items-center">
+        {outlets.map((s, i) => (
+          <span
+            key={s.url}
+            className={cn("relative rounded-full ring-2 ring-card", i > 0 && "-ml-2")}
+            style={{ zIndex: outlets.length - i }}
+          >
+            <OutletLogo url={s.url} name={s.source} className="size-6 rounded-full text-[13px]" />
+          </span>
+        ))}
+      </span>
+      <span className="text-[13px] font-semibold text-muted-foreground transition-colors group-hover:text-foreground">
+        {sources.length} source{sources.length === 1 ? "" : "s"}
+      </span>
+    </a>
+  );
+}
+
 const SHOWN_SOURCES = 6;
 
 /** Every source NIA checked against, as cards along the bottom of the result. */
@@ -1563,7 +1607,7 @@ function Sources({ sources }: { sources: ChatCheck["sources"] }) {
   const [all, setAll] = useState(false);
   const shown = all ? sources : sources.slice(0, SHOWN_SOURCES);
   return (
-    <section aria-labelledby="sources-title">
+    <section id="nia-sources" aria-labelledby="sources-title" className="scroll-mt-24">
       <div className="flex items-end justify-between gap-3">
         <h4 id="sources-title" className="text-[11px] font-semibold tracking-[3px] text-muted-foreground uppercase">
           Sources NIA checked · {sources.length}
