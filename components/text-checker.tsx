@@ -170,19 +170,20 @@ export function TextChecker() {
 
   return (
     <div className="relative flex h-full flex-col">
+      {empty && <div className="nia-glow pointer-events-none absolute inset-0" aria-hidden />}
       {empty && <ThemeToggle className="absolute top-3 right-3 z-10 text-muted-foreground hover:text-foreground" />}
       {!empty && (
-        <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background/85 px-3 backdrop-blur-md sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5 text-sm">
             <BotAvatar />
-            <span className="truncate font-semibold">{BOT_TITLE}</span>
+            <span className="truncate font-bold tracking-tight">{BOT_TITLE}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <ThemeToggle className="text-muted-foreground hover:text-foreground" />
             <button
               type="button"
               onClick={newChat}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-sm font-medium transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[transform,background-color] outline-none hover:-translate-y-px hover:bg-[var(--brand-blue-hover)] focus-visible:ring-3 focus-visible:ring-ring/40 motion-reduce:hover:translate-y-0"
             >
               <SquarePen className="size-4" aria-hidden /> New chat
             </button>
@@ -193,16 +194,23 @@ export function TextChecker() {
       {/* The welcome, until the first message; then the conversation */}
       <div
         ref={list}
-        className={cn("min-h-0 overflow-y-auto", empty ? "flex flex-[1_1_0] flex-col justify-end" : "flex-1")}
+        className={cn(
+          "relative min-h-0 overflow-y-auto",
+          empty ? "flex flex-[1_1_0] flex-col justify-end" : "flex-1",
+        )}
       >
         {empty ? (
-          <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-6 text-center">
+          <div className="mx-auto w-full max-w-2xl px-4 pt-8 pb-7 text-center">
             <div className="flex justify-center">
               <BotAvatar large />
             </div>
-            <p className="mt-3 text-sm font-semibold">{BOT_TITLE}</p>
-            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">Is this news real?</h1>
-            <p className="mx-auto mt-2 max-w-md text-balance text-muted-foreground">
+            <p className="mt-5 text-[11px] font-semibold tracking-[3px] text-primary uppercase dark:text-[#6b9aff]">
+              {BOT_TITLE}
+            </p>
+            <h1 className="mt-3 text-[34px] leading-[1.08] font-bold tracking-[-1px] sm:text-5xl sm:tracking-[-1.5px]">
+              Is this news real?
+            </h1>
+            <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-balance text-muted-foreground">
               Paste a forwarded message or a news link. {BOT_NAME} checks the facts and tells you if it&apos;s true or
               false.
             </p>
@@ -242,7 +250,7 @@ export function TextChecker() {
         )}
       </div>
 
-      <div className={cn("mx-auto w-full shrink-0 px-4", empty ? "max-w-2xl" : "max-w-3xl pb-3")}>
+      <div className={cn("relative mx-auto w-full shrink-0 px-4", empty ? "max-w-2xl" : "max-w-3xl pb-3")}>
         <Composer
           inputRef={input}
           value={text}
@@ -320,7 +328,7 @@ function BotAvatar({ large = false }: { large?: boolean }) {
 function BotTurn({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <div className="flex items-center gap-2.5 text-sm font-semibold">
+      <div className="flex items-center gap-2.5 text-sm font-bold tracking-tight">
         <BotAvatar />
         {BOT_NAME}
       </div>
@@ -334,7 +342,7 @@ function UserMessage({ text }: { text: string }) {
   const long = text.length > 500;
   return (
     <div className="flex justify-end">
-      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-chat-user px-4 py-2.5 text-[15px] leading-relaxed text-chat-user-foreground sm:max-w-[75%]">
+      <div className="max-w-[88%] rounded-[22px] rounded-br-md bg-chat-user px-4 py-2.5 text-[15px] leading-relaxed text-chat-user-foreground shadow-[0_8px_24px_-12px_rgb(57_121_255/0.55)] sm:max-w-[75%]">
         <p className={cn("break-words whitespace-pre-wrap", long && !open && "line-clamp-8")}>{text}</p>
         {long && (
           <button
@@ -372,28 +380,35 @@ function Sources({ sources }: { sources: NonNullable<ChatMessage["sources"]> }) 
         aria-expanded={open}
         aria-controls={listId}
         className={cn(
-          "inline-flex h-9 max-w-full items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
-          open ? "border-primary/50 bg-accent text-accent-foreground" : "bg-card",
+          "inline-flex h-9 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors outline-none hover:border-primary hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          open ? "border-primary bg-accent text-accent-foreground" : "bg-card",
         )}
       >
-        <Newspaper className="size-4 shrink-0 text-primary" aria-hidden />
+        <Newspaper className="size-4 shrink-0 text-accent-foreground" aria-hidden />
         <span className="truncate">{sources.label}</span>
         <span className="text-xs text-muted-foreground tabular-nums">{sources.items.length}</span>
         <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
       </button>
       {open && (
-        <ul id={listId} className="mt-2 max-w-xl divide-y overflow-hidden rounded-xl border bg-card">
+        <ul
+          id={listId}
+          className="mt-2 max-w-xl divide-y overflow-hidden rounded-[20px] border bg-card shadow-[0_1px_2px_rgb(10_10_11/0.04)]"
+        >
           {sources.items.map((s) => (
             <li key={s.url}>
               <a
                 href={s.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-3 px-3.5 py-2.5 transition-colors outline-none hover:bg-accent focus-visible:bg-accent"
+                className="group flex items-start gap-3 px-4 py-3 transition-colors outline-none hover:bg-accent focus-visible:bg-accent"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{s.title}</span>
-                  <span className="block text-xs text-muted-foreground">{s.source}</span>
+                  <span className="block text-sm leading-snug font-semibold tracking-[-0.01em] group-hover:text-accent-foreground">
+                    {s.title}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                    {s.source}
+                  </span>
                 </span>
                 <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               </a>
@@ -410,7 +425,7 @@ function BotMessage({ message }: { message: ChatMessage }) {
   return (
     <div className="space-y-3">
       {message.image && (
-        <PixImage src={message.image} alt="" size={[720, 405]} className="aspect-video w-full max-w-md rounded-xl border" />
+        <PixImage src={message.image} alt="" size={[720, 405]} className="aspect-video w-full max-w-md rounded-[20px] border" />
       )}
       <div className="text-[15px] leading-relaxed break-words">
         <RichText text={message.text} />
@@ -423,7 +438,7 @@ function BotMessage({ message }: { message: ChatMessage }) {
               href={b.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-full border bg-card px-3.5 text-sm font-medium text-primary transition-colors outline-none hover:border-primary/50 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-[18px] text-sm font-semibold text-primary-foreground transition-[transform,background-color,box-shadow] outline-none hover:-translate-y-px hover:bg-[var(--brand-blue-hover)] hover:shadow-[0_12px_30px_rgb(57_121_255/0.28)] focus-visible:ring-3 focus-visible:ring-ring/40 motion-reduce:hover:translate-y-0"
             >
               {b.label}
               <ExternalLink className="size-3.5 shrink-0" aria-hidden />
@@ -464,7 +479,7 @@ function Questions({
             onClick={() => onAsk(q)}
             disabled={disabled}
             title={q.description}
-            className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border border-primary/15 bg-accent px-3.5 py-1.5 text-left text-sm font-medium text-primary transition-colors outline-none hover:border-primary/50 hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border border-primary/35 bg-accent px-4 py-1.5 text-left text-sm font-medium text-accent-foreground transition-colors outline-none hover:border-primary hover:bg-primary/20 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
           >
             {q.title}
             {asked.has(q.id) && <Check className="size-3.5 shrink-0" aria-label="Asked" />}
@@ -560,7 +575,7 @@ function Composer({
         e.preventDefault();
         onSubmit();
       }}
-      className="rounded-2xl border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-primary/60 focus-within:ring-3 focus-within:ring-ring/15"
+      className="rounded-[22px] border bg-card shadow-[0_18px_40px_-20px_rgb(10_10_11/0.25)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:shadow-[0_0_0_4px_rgb(57_121_255/0.11)] dark:shadow-[0_30px_80px_-30px_rgb(0_0_0/0.6)]"
     >
       <label htmlFor="message" className="sr-only">
         Message
@@ -600,7 +615,7 @@ function Composer({
           onClick={() => setSoon(true)}
           aria-label="Add a photo (coming soon)"
           title="Add a photo (coming soon)"
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ImagePlus className="size-5" />
         </button>
@@ -623,7 +638,7 @@ function Composer({
             disabled={!canSend(value, hasNews)}
             aria-label="Send"
             title="Send"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity outline-none hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-35"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[transform,background-color,opacity] outline-none hover:-translate-y-px hover:bg-[var(--brand-blue-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 disabled:translate-y-0 disabled:opacity-35 motion-reduce:hover:translate-y-0"
           >
             <ArrowUp className="size-5" />
           </button>

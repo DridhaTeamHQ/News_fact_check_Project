@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Be_Vietnam_Pro, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// DailyMattr's typeface (dailymattr.com). Not a variable font: weights listed.
+const beVietnamPro = Be_Vietnam_Pro({
+  variable: "--font-be-vietnam-pro",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 const geistMono = Geist_Mono({
@@ -26,7 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${beVietnamPro.variable} ${geistMono.variable} dark h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

@@ -26,7 +26,7 @@ export function ThemeToggle({ label = false, className }: { label?: boolean; cla
       aria-label="Switch between dark and light theme"
       title="Switch theme"
       className={cn(
-        "inline-flex shrink-0 items-center gap-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex shrink-0 items-center gap-2.5 rounded-full text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
         label ? "h-10 w-full px-3" : "size-9 justify-center",
         className,
       )}
