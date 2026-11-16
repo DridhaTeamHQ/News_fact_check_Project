@@ -484,7 +484,7 @@ export function NiaCheck() {
                     key={t.label}
                     className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[13px] text-white/70 backdrop-blur-sm"
                   >
-                    <t.icon className="size-4 text-[#6b9aff]" aria-hidden />
+                    <t.icon className={cn("text-[#6b9aff]", t.icon === AsianetMark ? "size-5" : "size-4")} aria-hidden />
                     {t.label}
                   </li>
                 ))}
@@ -529,9 +529,19 @@ const EXAMPLES = [
 
 const TRUST = [
   { icon: Newspaper, label: "Trusted news outlets" },
-  { icon: ShieldCheck, label: "Fact-checkers like PIB and Factly" },
-  { icon: BadgeCheck, label: "The DailyMattr newsroom" },
+  { icon: AsianetMark, label: "Asianet's data library" },
+  { icon: BadgeCheck, label: "The dailymattr newsroom" },
 ];
+
+/** Asianet News's striped "A" mark, on a small white tile so its blue and red
+ *  read on the dark hero. */
+function AsianetMark({ className, ...rest }: { className?: string; "aria-hidden"?: boolean }) {
+  return (
+    <span {...rest} className={cn("grid shrink-0 place-items-center rounded-[5px] bg-white p-[2px]", className)}>
+      <Image src="/asianet-mark.svg" alt="" width={28} height={20} className="h-auto w-full" />
+    </span>
+  );
+}
 
 /** The hero's changing word, in a dark pill as on dailymattr.com. */
 const WORDS = ["news", "forward", "link", "headline", "rumour"];
