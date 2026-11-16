@@ -375,20 +375,12 @@ export function NiaCheck() {
             >
               Is this <RotatingWord /> real?
             </h1>
-            <p
-              className="nia-rise mx-auto mt-5 max-w-xl text-base leading-relaxed text-balance text-white/75 sm:text-lg"
-              style={{ animationDelay: "180ms" }}
-            >
-              Paste a news link or a forwarded message. NIA checks every claim against trusted outlets and
-              fact-checkers, and tells you what&apos;s really true.
-            </p>
-
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void factCheck();
               }}
-              className="nia-rise nia-glow-ring mx-auto mt-9 max-w-3xl rounded-[26px] border border-white/12 bg-white/[0.06] p-2 text-left shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_30px_80px_-30px_rgb(0_0_0/0.8)] backdrop-blur-md transition-[border-color,background-color,box-shadow] focus-within:border-white/20 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_0_4px_rgb(57_121_255/0.12),0_30px_80px_-30px_rgb(57_121_255/0.45)]"
+              className="nia-rise nia-glow-ring mx-auto mt-10 max-w-3xl rounded-[26px] border border-white/12 bg-white/[0.06] p-2 text-left shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_30px_80px_-30px_rgb(0_0_0/0.8)] backdrop-blur-md transition-[border-color,background-color,box-shadow] focus-within:border-white/20 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_0_4px_rgb(57_121_255/0.12),0_30px_80px_-30px_rgb(57_121_255/0.45)]"
               style={{ animationDelay: "240ms" }}
             >
               <label htmlFor="nia-input" className="sr-only">
@@ -449,6 +441,15 @@ export function NiaCheck() {
                 </button>
               </div>
             </form>
+
+            {/* what NIA does, under the box */}
+            <p
+              className="nia-rise mx-auto mt-5 max-w-2xl text-[15px] leading-relaxed text-balance text-white/65"
+              style={{ animationDelay: "270ms" }}
+            >
+              Paste a news link or a forwarded message. NIA checks every claim against trusted outlets and
+              fact-checkers, and tells you what&apos;s really true.
+            </p>
 
             {/* one-tap examples */}
             <div
@@ -533,29 +534,56 @@ const TRUST = [
 /** The hero's changing word, in a dark pill as on dailymattr.com. */
 const WORDS = ["news", "forward", "link", "headline", "rumour"];
 
+/** The hero's changing word: just the word, in brand blue. Its slot eases to
+ * each word's width, so the headline stays centred without jumping. */
 function RotatingWord() {
   const [i, setI] = useState(0);
+  const [width, setWidth] = useState<number | null>(null); // null: natural width (before measuring)
+  const sizes = useRef<(HTMLSpanElement | null)[]>([]);
+
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = setInterval(() => setI((n) => (n + 1) % WORDS.length), 2600);
     return () => clearInterval(timer);
   }, []);
+
+  // Measure the word (again once the web font is in, and on resize).
+  useEffect(() => {
+    const measure = () => {
+      const w = sizes.current[i]?.getBoundingClientRect().width;
+      if (w) setWidth(Math.ceil(w));
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [i]);
+
   return (
-    // Every word sits in the same grid cell, so the pill is always as wide as
-    // the longest one and the headline never jumps when the word changes.
-    <span className="relative inline-grid h-[1.22em] translate-y-[0.06em] items-center justify-items-center overflow-hidden rounded-full border border-white/10 bg-gradient-to-b from-[#232327] to-[#151518] px-[0.45em] align-baseline shadow-[inset_0_2px_10px_rgb(0_0_0/0.55),0_4px_30px_rgb(0_0_0/0.35)]">
-      {WORDS.map((word, n) => (
-        <span
-          key={word}
-          aria-hidden={n !== i}
-          className={cn(
-            "[grid-area:1/1] bg-gradient-to-r from-[#6b9aff] to-[#b9cfff] bg-clip-text text-transparent",
-            n === i ? "nia-word" : "invisible",
-          )}
-        >
-          {word}
-        </span>
-      ))}
+    <span
+      className="relative inline-block h-[1.1em] overflow-hidden align-bottom transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+      style={width ? { width } : undefined}
+    >
+      {/* the words at their natural size, for measuring only */}
+      <span className="pointer-events-none invisible absolute top-0 left-0 whitespace-nowrap" aria-hidden>
+        {WORDS.map((word, n) => (
+          <span
+            key={word}
+            ref={(el) => {
+              sizes.current[n] = el;
+            }}
+            className="absolute top-0 left-0"
+          >
+            {word}
+          </span>
+        ))}
+      </span>
+      <span
+        key={i}
+        className="nia-word inline-block bg-gradient-to-r from-[#6b9aff] to-[#b9cfff] bg-clip-text pb-[0.08em] whitespace-nowrap text-transparent"
+      >
+        {WORDS[i]}
+      </span>
     </span>
   );
 }

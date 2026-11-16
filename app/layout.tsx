@@ -28,6 +28,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      // globals.css scrolls smoothly; this tells Next.js to jump on route changes
+      data-scroll-behavior="smooth"
       className={`${beVietnamPro.variable} ${geistMono.variable} dark h-full antialiased`}
       suppressHydrationWarning
     >
