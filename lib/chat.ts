@@ -11,7 +11,7 @@ import {
   welcomeReply,
   type ChatReply,
 } from "./chat-reply";
-import type { ChatQuestion, PageCheck, PageClaim } from "./chat-text";
+import type { ChatQuestion, Correction, PageCheck, PageClaim } from "./chat-text";
 import {
   answerQuestion,
   answerTyped,
@@ -21,11 +21,14 @@ import {
   rememberLink,
   rememberMessage,
   tellNews,
+  tellTruth,
+  viewsFor,
   type CheckContext,
 } from "./chat-followup";
 import { checkNews, NewsCheckError } from "./news-check";
 import { dailyMattrUrl, getPixPost } from "./pix";
 import { factCheckModel } from "./shortly/fact-check";
+import { significantTokens } from "./shortly/related-sources";
 import { chatCompletionRaw } from "./shortly/summary-clean";
 import {
   checkText,
@@ -117,7 +120,7 @@ const withQuestions = (reply: ChatReply, questions: ChatQuestion[]): ChatReply =
 /** A DailyMattr link's own post, as a same-story match. Never fails. */
 async function ownPost(pixId: string): Promise<PixMatch[]> {
   const post = await getPixPost(pixId).catch(() => null);
-  return post ? [{ ...post, excerpt: post.body.replace(/\s+/g, " ").slice(0, 400), sameStory: true }] : [];
+  return post ? [{ ...post, excerpt: post.body.replace(/\s+/g, " ").slice(0, 400), sameStory: true, distance: 0 }] : [];
 }
 
 /** The topic of a checked message, guessed from its words if the check has none. */
@@ -136,10 +139,36 @@ function linkOf(text: string): string | null {
 }
 
 /** The checked claims, for the site's claim-by-claim breakdown. */
-const claimsOf = (claims: { claim: string; verdict: PageClaim["verdict"]; evidence?: string }[]): PageClaim[] =>
+const claimsOf = (
+  claims: { claim: string; verdict: PageClaim["verdict"]; evidence?: string; source?: PageClaim["source"] }[],
+): PageClaim[] =>
   claims
     .filter((c) => c.claim.trim())
-    .map((c) => ({ claim: c.claim.trim(), verdict: c.verdict, evidence: c.evidence?.trim() || null }));
+    .map((c) => {
+      const evidence = c.evidence?.trim() || null;
+      // Only a web link the reader can open.
+      const source = evidence && c.source && /^https?:\/\//i.test(c.source.url) ? c.source : null;
+      return { claim: c.claim.trim(), verdict: c.verdict, evidence, source };
+    });
+
+/** A not-true forward's "real news" (written by the check from the evidence),
+ * with each point's source. DailyMattr sources point at dailymattr.com. */
+function correctionOf(result: TextCheckResult): Correction | null {
+  const real = result.realNews;
+  if (!real) return null;
+  const sourceOf = (i: number | null) => {
+    const l = i === null ? null : result.links[i];
+    if (!l) return null;
+    const pix = l.kind === "dailymattr" ? result.pix.find((p) => l.url === `/pix/${p.id}`) : null;
+    const url = (pix && dailyMattrUrl(pix)) || (/^https?:\/\//i.test(l.url) ? l.url : null);
+    return url ? { title: l.title, source: l.source, url } : null;
+  };
+  return {
+    headline: real.headline.trim() || null,
+    points: real.points.map((p) => ({ text: p.text, source: sourceOf(p.link) })),
+    advice: real.advice,
+  };
+}
 
 const isReal = (label: string) => label === "true" || label === "mostly-true";
 
@@ -151,7 +180,16 @@ async function check(
   text: string,
   link: string | null,
   o: { force?: boolean; userId?: string; messageId?: string },
-): Promise<{ reply: ChatReply; news: CheckContext; story: string | null; claims: PageClaim[] }> {
+): Promise<{
+  reply: ChatReply;
+  news: CheckContext;
+  story: string | null;
+  claims: PageClaim[];
+  /** Not-true forwards: "the real news" the check wrote, with its sources. */
+  correction: Correction | null;
+  /** The website's "see it another way" views of this news. */
+  views: ChatQuestion[];
+}> {
   if (link) {
     const report = await checkNews({ url: link, force: o.force });
     // DailyMattr's post on this news: the link's own post, or a match.
@@ -166,6 +204,8 @@ async function check(
       news: saved.news,
       story,
       claims: claimsOf(report.claims),
+      correction: null, // links: written for the site in checkForPage
+      views: viewsFor(saved.contextId, saved.news.verdict),
     };
   }
   const checked = (!o.force && getCachedTextCheck(text)) || (await checkText(text));
@@ -183,6 +223,8 @@ async function check(
     news: saved.news,
     story,
     claims: claimsOf(result.report.claims),
+    correction: real ? null : correctionOf(result),
+    views: viewsFor(saved.contextId, saved.news.verdict),
   };
 }
 
@@ -263,6 +305,34 @@ const WHOLE_VERDICT: Record<NonNullable<ChatReply["check"]>["verdict"], PageClai
   unverified: "unsupported",
 };
 const RELATED_DISTANCE = 0.52; // looser than the chat's 0.47: nearby topics count
+const RELATED_LOOSE = 0.6; // when nothing is that close: the same broad subject
+const RELATED_PROBES = 8;
+const RELATED_TIMEOUT_MS = 15_000;
+const TRUTH_TIMEOUT_MS = 20_000;
+
+/** `work`'s result, or `fallback` if it takes longer than `ms`. */
+const within = <T,>(work: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([work, new Promise<T>((done) => setTimeout(() => done(fallback), ms))]);
+
+/** Words to search DailyMattr for: the ones the story keeps coming back to
+ * (they name its subject: "siang", "dam", "protests"), then the longest
+ * (names and places), from the headline and the checked claims. The chat
+ * searches the headline's first four words only, which misses stories whose
+ * headline opens with generic words ("group demands removal of…"). */
+function topicKeywords(headline: string, claims: PageClaim[]): string[] {
+  const texts = [headline, ...claims.slice(0, 12).map((c) => c.claim)];
+  const score = new Map<string, number>();
+  texts.forEach((t, i) => {
+    for (const w of new Set(significantTokens(t))) {
+      if (/^\d+$/.test(w)) continue; // bare numbers match too much
+      score.set(w, (score.get(w) ?? 0) + (i === 0 ? 2 : 1));
+    }
+  });
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .slice(0, RELATED_PROBES)
+    .map(([w]) => w);
+}
 
 /** The fact-check box on the home page: the same check as the chat, plus the
  * story on its own and a wider list of related DailyMattr stories. */
@@ -270,17 +340,50 @@ export async function checkForPage(body: unknown): Promise<{ result: PageCheck; 
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const text = typeof b.text === "string" ? b.text.trim() : "";
   const userId = typeof b.userId === "string" && b.userId.trim() ? b.userId.trim().slice(0, 200) : undefined;
-  const only = (reply: ChatReply, status = 200) => ({ result: { reply, story: null, related: [], claims: [] }, status });
+  const only = (reply: ChatReply, status = 200) => ({
+    result: { reply, story: null, related: [], claims: [], correction: null, views: [] },
+    status,
+  });
 
   if (text.length > MAX_LENGTH) return only(errorReply(TOO_LONG));
   const link = linkOf(text);
   if (!link && (text.length < MIN_LENGTH || GREETING.test(text))) return only(notNewsReply());
 
   try {
-    const { reply, story, claims } = await check(text, link, { userId, force: b.force === true });
+    const { reply, story, claims, news, correction: written, views } = await check(text, link, {
+      userId,
+      force: b.force === true,
+    });
     const claim = reply.check?.claim;
     const lead = reply.check?.dailyMattr?.url;
-    const found = claim ? await matchDailyMattr(claim, undefined, { max: RELATED_MAX + 1, maxDistance: RELATED_DISTANCE }) : [];
+    const notTrue = reply.check ? !isReal(reply.check.verdict) : false;
+    const hasFacts = (c: Correction | null) => Boolean(c && (c.headline || c.points.length));
+    // Searched by the story's subject words; matched on the headline with the
+    // first claims, which say more about the subject than a headline alone.
+    const keywords = claim ? topicKeywords(claim, claims) : [];
+    const query = [claim, ...claims.slice(0, 3).map((c) => c.claim)].filter(Boolean).join(" ");
+    // Both run together, and neither may hold the answer up for long.
+    const [matches, truth] = await Promise.all([
+      claim
+        ? within(matchDailyMattr(query, keywords, { max: RELATED_MAX + 1, maxDistance: RELATED_LOOSE }), RELATED_TIMEOUT_MS, [])
+        : Promise.resolve([] as PixMatch[]),
+      notTrue && !hasFacts(written) ? within(tellTruth(news), TRUTH_TIMEOUT_MS, null) : Promise.resolve(null),
+    ]);
+    let found = matches;
+    const correction: Correction | null = !notTrue
+      ? null
+      : hasFacts(written)
+        ? written
+        : truth
+          ? {
+              headline: truth.headline || null,
+              points: truth.points.map((text) => ({ text, source: null })),
+              advice: truth.advice.length ? truth.advice : (written?.advice ?? []),
+            }
+          : written;
+    // Prefer the close ones; fall back to the broader subject when none are.
+    const close = found.filter((p) => p.distance < RELATED_DISTANCE);
+    found = close.length >= 3 ? close : found;
     const related = found
       .map((p) => ({ p, url: dailyMattrUrl(p) }))
       .filter((x): x is { p: PixMatch; url: string } => x.url !== null && x.url !== lead)
@@ -294,14 +397,15 @@ export async function checkForPage(body: unknown): Promise<{ result: PageCheck; 
         url,
         excerpt: p.excerpt,
         sameStory: p.sameStory,
+        close: p.distance < RELATED_DISTANCE,
       }));
     // A fact-checker's rating can settle the verdict before claims are graded
     // one by one: then the main claim stands for the whole, with that rating.
     const shownClaims =
       claims.length || !reply.check
         ? claims
-        : [{ claim: reply.check.claim, verdict: WHOLE_VERDICT[reply.check.verdict], evidence: reply.check.reason }];
-    return { result: { reply, story, related, claims: shownClaims }, status: 200 };
+        : [{ claim: reply.check.claim, verdict: WHOLE_VERDICT[reply.check.verdict], evidence: reply.check.reason, source: null }];
+    return { result: { reply, story, related, claims: shownClaims, correction, views }, status: 200 };
   } catch (err) {
     if (err instanceof NotNewsError) return only(notNewsReply());
     if (err instanceof NewsCheckError && err.status < 500) return only(errorReply(UNREADABLE_LINK));

@@ -1,3 +1,5 @@
+import { Reveal } from "@/components/reveal";
+
 /* The footer, after dailymattr.com's: a mist-grey sheet (near-black in dark
  * mode), the wordmark and links, and the logo again as a giant signature. */
 
@@ -30,7 +32,7 @@ const COLUMNS = [
 export function SiteFooter() {
   return (
     <footer className="mt-24 overflow-hidden bg-[#e5e4e8] pt-16 dark:bg-[#0d0d0f]">
-      <div className="mx-auto flex max-w-7xl flex-col gap-10 px-5 sm:px-8 md:flex-row md:justify-between">
+      <Reveal className="mx-auto flex max-w-7xl flex-col gap-10 px-5 sm:px-8 md:flex-row md:justify-between">
         <div className="max-w-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/dailymattr-logo.svg" alt="DailyMattr" width={156} height={32} className="h-8 w-auto" />
@@ -59,7 +61,7 @@ export function SiteFooter() {
             </div>
           ))}
         </div>
-      </div>
+      </Reveal>
       <p className="mx-auto mt-12 max-w-7xl px-5 text-sm font-medium text-muted-foreground sm:px-8">
         © <span className="font-bold text-primary">Dridha Technologies</span> Private Limited
       </p>

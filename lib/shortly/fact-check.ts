@@ -35,13 +35,16 @@ import type { RelatedSource } from "./related-sources";
 export type ClaimVerdict = "supported" | "partially-supported" | "unsupported" | "contradicted";
 
 export type FactSource = { source: string; url: string };
+/** The article a claim's evidence quote comes from. */
+export type QuoteSource = { source: string; url: string; title: string };
 
 export type FactCheckResult = {
   fact_score: number; // 0-100
   fact_label: "verified" | "mostly-factual" | "mixed" | "unverified";
   fact_notes: {
     // evidence = the source's words the verdict rests on ("" when not in source).
-    claims: Array<{ claim: string; verdict: ClaimVerdict; evidence: string }>;
+    // source = the article the evidence quote was found in, when it can be traced.
+    claims: Array<{ claim: string; verdict: ClaimVerdict; evidence: string; source?: QuoteSource }>;
     signals: { attribution: number; specificity: number; tone: number }; // each 0-2
     rationale: string;
     // Independent outlets whose coverage the claims were checked against — the
@@ -186,6 +189,25 @@ export function quoteInEvidence(quote: string, evidenceWords: Set<string>): bool
 }
 
 type Graded = { claim: string; verdict: ClaimVerdict; evidence: string; figureMissing?: boolean };
+
+/** Share of the quote's meaningful words that appear in `words`. */
+function quoteOverlap(quote: string, words: Set<string>): number {
+  const qs = wordTokens(quote).filter((w) => w.length >= 3 || /\d/.test(w));
+  return qs.length ? qs.filter((w) => words.has(w)).length / qs.length : 0;
+}
+
+/** The article a quote was taken from: the one holding most of its words.
+ * The quote is already verified against all the evidence, so half is enough:
+ * quotes stitched from passages ("… ") rarely sit whole in one article.
+ * Earlier articles win ties, so the original outranks outlets repeating it. */
+function sourceOfQuote(quote: string, docs: { ref: QuoteSource; words: Set<string> }[]): QuoteSource | undefined {
+  let best: { ref: QuoteSource; share: number } | undefined;
+  for (const d of docs) {
+    const share = quoteOverlap(quote, d.words);
+    if (share >= 0.5 && (!best || share > best.share)) best = { ref: d.ref, share };
+  }
+  return best?.ref;
+}
 
 // Deterministic aggregation. Claim grounding drives the score; source quality
 // can only scale it (a well-sourced article can't rescue ungrounded claims).
@@ -366,6 +388,21 @@ export async function factCheckArticle(
       : "");
   let evidenceAll = `${sourceText}\n${corroborationText}`;
 
+  // Each article in the evidence, so a claim's quote can be traced to the one
+  // it came from. Without an original, the source text is other outlets'
+  // articles, each headed "[Outlet] Title": those bodies belong to that outlet.
+  const blocks = input.primarySource?.url ? [] : bodyText.split(/\n\n(?=\[)/);
+  const docs: { ref: QuoteSource; words: Set<string> }[] = [];
+  if (input.primarySource?.url) {
+    docs.push({ ref: { source: sources[0].source, url: input.primarySource.url, title }, words: new Set(wordTokens(sourceText)) });
+  }
+  const addDoc = (r: RelatedSource, text: string) => {
+    if (r.url) docs.push({ ref: { source: r.source, url: r.url, title: r.title }, words: new Set(wordTokens(text)) });
+  };
+  for (const r of related) {
+    addDoc(r, blocks.find((b) => b.startsWith(`[${r.source}] ${r.title}`)) ?? `${r.title} ${r.excerpt}`);
+  }
+
   try {
     const claimTexts = await (input.claims ?? extractClaims(apiKey, summary));
     if (claimTexts.length === 0) return null;
@@ -406,6 +443,7 @@ export async function factCheckArticle(
           /* second look runs on the evidence already gathered */
         }
       }
+      for (const r of extra) addDoc(r, `${r.title} ${r.excerpt}`);
       const extraText = extra.map(sourceLine).join("\n");
       if (extraText) {
         evidenceAll += `\n${extraText}`;
@@ -481,7 +519,10 @@ export async function factCheckArticle(
       fact_score: score,
       fact_label: labelFor(score),
       fact_notes: {
-        claims: claims.map(({ claim, verdict, evidence }) => ({ claim, verdict, evidence })),
+        claims: claims.map(({ claim, verdict, evidence }) => {
+          const source = evidence ? sourceOfQuote(evidence, docs) : undefined;
+          return source ? { claim, verdict, evidence, source } : { claim, verdict, evidence };
+        }),
         signals,
         sources,
         source_count: sources.length,

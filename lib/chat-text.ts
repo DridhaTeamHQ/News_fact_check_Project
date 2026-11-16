@@ -106,6 +106,8 @@ export type RelatedPix = {
   url: string;
   excerpt: string;
   sameStory: boolean;
+  /** On the same or a nearby topic; false: only the same broad subject. */
+  close: boolean;
 };
 
 /** One claim from the checked news and how the sources bear it out:
@@ -115,6 +117,18 @@ export type PageClaim = {
   claim: string;
   verdict: "supported" | "partially-supported" | "contradicted" | "unsupported";
   evidence: string | null;
+  /** The article `evidence` is quoted from, when it could be traced. */
+  source: { title: string; source: string; url: string } | null;
+};
+
+/** For news that isn't true: what is actually true, from the sources only.
+ * `headline`: one plain sentence ("No demonetisation of ₹500 notes has been
+ * announced."); `points`: the facts, each with the source it comes from when
+ * known; `advice`: what the reader should do. */
+export type Correction = {
+  headline: string | null;
+  points: { text: string; source: { title: string; source: string; url: string } | null }[];
+  advice: string[];
 };
 
 /** The home page's fact-check box (/api/nia). */
@@ -127,4 +141,10 @@ export type PageCheck = {
   related: RelatedPix[];
   /** Every checked claim, in the order the news makes them. */
   claims: PageClaim[];
+  /** False, partly false or unconfirmed news: what is actually true. Null
+   * for true news (its story is in `story`). */
+  correction: Correction | null;
+  /** Other ways to see this news ("Opposite sides", "Re-summarise", …):
+   * question ids, answered by the chat API's `{ type: "question" }`. */
+  views: ChatQuestion[];
 };

@@ -20,7 +20,8 @@ import { chatCompletionRaw } from "./shortly/summary-clean";
  *   4. When the verdict isn't true, the model writes "the real news" from the
  *      evidence only, each point tied to a numbered source. */
 
-export type PixMatch = PixPostSummary & { excerpt: string; sameStory: boolean };
+/** `distance`: how far its headline is from the news (cosine distance; lower is closer). */
+export type PixMatch = PixPostSummary & { excerpt: string; sameStory: boolean; distance: number };
 
 export type TextLink = {
   kind: "dailymattr" | "fact-check" | "outlet";
@@ -166,6 +167,7 @@ export async function matchDailyMattr(
       ...f.post,
       excerpt: (posts[i]?.body ?? "").replace(/\s+/g, " ").slice(0, 400),
       sameStory: f.d < SAME_STORY,
+      distance: f.d,
     }));
   } catch (err) {
     console.error("[text-check] DailyMattr match", err);
@@ -307,6 +309,7 @@ export async function checkText(text: string): Promise<TextCheckResult> {
     ...f.post,
     excerpt: (posts[i]?.body ?? "").replace(/\s+/g, " ").slice(0, 400),
     sameStory: f.d < SAME_STORY,
+    distance: f.d,
   }));
   const best = found.findIndex((f) => f.d < SAME_STORY);
   const basis = best >= 0 ? posts[best] : null;

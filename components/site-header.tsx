@@ -6,14 +6,14 @@ import { ThemeToggle } from "@/components/theme-toggle";
  * and the blue "Get the app" button. */
 
 const LINKS = [
-  { href: "/#latest", label: "Latest PIX" },
   { href: "/#fact-check", label: "Fact check" },
+  { href: "/#how", label: "How it works" },
   { href: "/chat", label: "Chat with NIA" },
 ];
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-50 border-b border-transparent bg-background/85 backdrop-blur-md supports-[backdrop-filter]:bg-background/75">
+    <header className="nia-header sticky top-0 z-50 border-b border-transparent bg-background/85 backdrop-blur-md supports-[backdrop-filter]:bg-background/75">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:h-[70px] sm:px-8">
         <Link
           href="/"

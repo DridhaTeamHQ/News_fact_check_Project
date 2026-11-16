@@ -10,6 +10,7 @@ import {
   MAX_SOURCE_CHARS,
   type ClaimVerdict,
   type FactCheckResult,
+  type QuoteSource,
 } from "./shortly/fact-check";
 import {
   articleReader,
@@ -88,7 +89,7 @@ export type FactCheckReport = {
   score: number | null;
   label: FactLabel | null;
   rationale: string;
-  claims: { claim: string; verdict: ClaimVerdict; evidence?: string }[]; // evidence = the source's own words
+  claims: { claim: string; verdict: ClaimVerdict; evidence?: string; source?: QuoteSource }[]; // evidence = the source's own words; source = the article it is from
   signals: { attribution: number; specificity: number; tone: number } | null;
   sources: ReportSource[]; // primary first, then other outlets
   note: string | null; // how the evidence was gathered, or why it's unscored

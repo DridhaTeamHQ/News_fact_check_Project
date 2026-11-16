@@ -245,8 +245,13 @@
   box-decoration-break: clone;
   padding: 0 0.15em;
   border-radius: 0.2em;
-  background: linear-gradient(transparent 55%, var(--nia-hl) 55%);
+  background-image: linear-gradient(transparent 55%, var(--nia-hl) 55%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  /* drawn on like a marker pen, left to right */
+  animation: nia-ink 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both;
 }
+@keyframes nia-ink { from { background-size: 0% 100%; } }
 .nia-hl-true { --nia-hl: rgb(16 185 129 / 0.22); }
 .nia-hl-partly { --nia-hl: rgb(245 158 11 / 0.26); }
 .nia-hl-false { --nia-hl: rgb(244 63 94 / 0.22); }
@@ -255,3 +260,163 @@
 .dark .nia-hl-partly { --nia-hl: rgb(245 158 11 / 0.3); }
 .dark .nia-hl-false { --nia-hl: rgb(244 63 94 / 0.3); }
 .dark .nia-hl-none { --nia-hl: rgb(161 161 170 / 0.24); }
+
+/* ---------- refinements ---------- */
+
+html { scroll-behavior: smooth; }
+
+/* Sections fade up as they scroll into view (components/reveal.tsx). */
+/* Visible by default; only content that starts below the screen waits. */
+.nia-reveal {
+  transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--nia-delay, 0ms);
+}
+.nia-reveal[data-pending] {
+  opacity: 0;
+  transform: translateY(28px);
+  transition-duration: 0s; /* hide at once, off screen */
+}
+
+/* The header gains a hairline and a soft shadow once the page scrolls
+ * (scroll-driven; browsers without it keep the plain bar). */
+@keyframes nia-header-in {
+  to {
+    border-bottom-color: var(--border);
+    box-shadow: 0 8px 30px -18px rgb(10 10 11 / 0.35);
+  }
+}
+@supports (animation-timeline: scroll()) {
+  .nia-header {
+    animation: nia-header-in linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 80px;
+  }
+}
+
+/* Faint film grain, as on dailymattr.com. */
+.nia-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The hero's changing word slides up into its pill. */
+@keyframes nia-word {
+  from { opacity: 0; transform: translateY(60%); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.nia-word { display: inline-block; animation: nia-word 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* The hero logo's orbit turns slowly. */
+.nia-orbit-slow { animation-duration: 4s; opacity: 0.8; }
+
+/* A soft light sweeping across the main button now and then. */
+@keyframes nia-shine {
+  0%, 60% { transform: translateX(-130%) skewX(-18deg); }
+  100% { transform: translateX(230%) skewX(-18deg); }
+}
+.nia-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  animation: nia-shine 4.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.nia-shine:disabled::after { animation: none; opacity: 0; }
+
+/* A slowly turning blue glow around the focused fact-check box. */
+@property --nia-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes nia-turn { to { --nia-angle: 360deg; } }
+.nia-glow-ring { position: relative; isolation: isolate; }
+.nia-glow-ring::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--nia-angle), transparent 0deg, #3979ff 70deg, #8db4ff 120deg, transparent 190deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  animation: nia-turn 5s linear infinite paused; /* turns only while focused */
+}
+.nia-glow-ring:focus-within::before { opacity: 1; animation-play-state: running; }
+
+/* Phones: drop the costly paint effects, as dailymattr.com does (re-blurring
+ * the header and blending grain on every scroll frame janks mobile GPUs). */
+@media (max-width: 900px) {
+  .nia-grain::after { display: none; }
+  .nia-header {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: color-mix(in oklab, var(--background) 95%, transparent) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .nia-reveal { transform: none; transition-duration: 0.01ms; }
+  .nia-hl { animation: none; }
+  .nia-shine::after, .nia-glow-ring::before, .nia-word { animation: none; }
+}
+
+/* ---------- hero depth ---------- */
+
+/* A faint grid that fades out from the middle. */
+.nia-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: center top;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 38%, #000 15%, transparent 72%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 38%, #000 15%, transparent 72%);
+}
+
+/* Slowly drifting light behind the hero. */
+@keyframes nia-drift-a {
+  from { transform: translate(-12%, -6%) scale(1); }
+  to { transform: translate(10%, 8%) scale(1.15); }
+}
+@keyframes nia-drift-b {
+  from { transform: translate(10%, 4%) scale(1.1); }
+  to { transform: translate(-8%, -8%) scale(0.95); }
+}
+.nia-aurora-a { animation: nia-drift-a 16s ease-in-out infinite alternate; }
+.nia-aurora-b { animation: nia-drift-b 19s ease-in-out infinite alternate; }
+
+/* A thin light along the top edge of a dark panel. */
+.nia-top-light {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+.nia-top-light::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 15%;
+  right: 15%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(141 180 255 / 0.55), transparent);
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .nia-aurora-a, .nia-aurora-b { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nia-aurora-a, .nia-aurora-b { animation: none; }
+}
