@@ -482,7 +482,10 @@ export function NiaCheck() {
                 {TRUST.map((t) => (
                   <li
                     key={t.label}
-                    className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[13px] text-white/70 backdrop-blur-sm"
+                    className={cn(
+                      "flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[13px] text-white/70 backdrop-blur-sm",
+                      t.icon === AsianetMark && "nia-halo text-white/90",
+                    )}
                   >
                     <t.icon className={cn("text-[#6b9aff]", t.icon === AsianetMark ? "size-5" : "size-4")} aria-hidden />
                     {t.label}
