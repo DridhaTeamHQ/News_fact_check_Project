@@ -33,6 +33,7 @@ import {
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
+import { OutletLogo } from "@/components/outlet-logo";
 import { PixImage } from "@/components/pix-image";
 import { Reveal } from "@/components/reveal";
 import { RichText } from "@/components/rich-text";
@@ -1373,8 +1374,9 @@ function WhatsTrue({ correction, verdict }: { correction: Correction; verdict: V
                       target="_blank"
                       rel="noopener noreferrer"
                       title={p.source.title}
-                      className="ml-2 inline-flex translate-y-[-1px] items-center gap-1 rounded-full border bg-card px-2 py-0.5 align-middle text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      className="ml-2 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-full border bg-card py-0.5 pr-2 pl-0.5 align-middle text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     >
+                      <OutletLogo url={p.source.url} name={p.source.source} className="size-[18px] rounded-full" />
                       {p.source.source}
                       <ExternalLink className="size-3" aria-hidden />
                     </a>
@@ -1534,6 +1536,7 @@ function ClaimItem({ claim, index }: { claim: PageClaim; index: number }) {
                       title={claim.source.title}
                       className="mt-2 flex w-fit max-w-full items-center gap-1.5 text-xs font-semibold text-primary hover:underline focus-visible:underline dark:text-[#6b9aff]"
                     >
+                      <OutletLogo url={claim.source.url} name={claim.source.source} className="size-4 rounded-[5px]" />
                       <span className="shrink-0">{claim.source.source}</span>
                       {claim.source.title && (
                         <span className="truncate font-medium text-muted-foreground">· {claim.source.title}</span>
@@ -1584,14 +1587,16 @@ function Sources({ sources }: { sources: ChatCheck["sources"] }) {
               rel="noopener noreferrer"
               className="group flex h-full items-start gap-3 rounded-[16px] border bg-card p-3.5 transition-[border-color,box-shadow,transform] duration-300 outline-none hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_-14px_rgb(10_10_11/0.3)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:hover:translate-y-0"
             >
-              <span
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold uppercase",
-                  s.kind === "fact-check" ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400" : "bg-muted",
+              <span className="relative shrink-0">
+                <OutletLogo url={s.url} name={s.source} className="size-10 rounded-[11px] text-base" />
+                {s.kind === "fact-check" && (
+                  <span
+                    className="absolute -right-1 -bottom-1 flex size-[18px] items-center justify-center rounded-full bg-emerald-500 text-white ring-2 ring-card"
+                    title="Fact-checker"
+                  >
+                    <ShieldCheck className="size-2.5" aria-hidden />
+                  </span>
                 )}
-                aria-hidden
-              >
-                {s.kind === "fact-check" ? <ShieldCheck className="size-4" /> : s.source.slice(0, 1)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="line-clamp-3 block text-[13.5px] leading-snug font-semibold group-hover:text-accent-foreground">

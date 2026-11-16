@@ -22,6 +22,7 @@ import {
   type FoundArticle,
   type SearchStats,
 } from "./news-search";
+import { OUTLETS } from "./outlets";
 import { findRelatedSources, significantTokens, type RelatedSource } from "./shortly/related-sources";
 
 /** At least 2 significant words in common (Shortly's token rule). */
@@ -108,55 +109,8 @@ export type FactCheckReport = {
 
 export const openaiConfigured = () => Boolean(process.env.OPENAI_API_KEY);
 
-const OUTLETS: Record<string, string> = {
-  "timesofindia.indiatimes.com": "Times of India",
-  "economictimes.indiatimes.com": "Economic Times",
-  "hindustantimes.com": "Hindustan Times",
-  "indianexpress.com": "Indian Express",
-  "thehindu.com": "The Hindu",
-  "ndtv.com": "NDTV",
-  "sports.ndtv.com": "NDTV Sports",
-  "ndtvprofit.com": "NDTV Profit",
-  "news18.com": "News18",
-  "moneycontrol.com": "Moneycontrol",
-  "livemint.com": "Mint",
-  "business-standard.com": "Business Standard",
-  "newindianexpress.com": "New Indian Express",
-  "telegraphindia.com": "The Telegraph",
-  "deccanherald.com": "Deccan Herald",
-  "thehindubusinessline.com": "BusinessLine",
-  "financialexpress.com": "Financial Express",
-  "indiatoday.in": "India Today",
-  "reuters.com": "Reuters",
-  "bbc.com": "BBC",
-  "bbc.co.uk": "BBC",
-  "aljazeera.com": "Al Jazeera",
-  "dawn.com": "Dawn",
-  "timesnownews.com": "Times Now",
-  "wionews.com": "WION",
-  "firstpost.com": "Firstpost",
-  "abplive.com": "ABP Live",
-  "freepressjournal.in": "Free Press Journal",
-  "news.abplive.com": "ABP Live",
-  "zeenews.india.com": "Zee News",
-  "republicworld.com": "Republic World",
-  "theprint.in": "ThePrint",
-  "scroll.in": "Scroll",
-  "thewire.in": "The Wire",
-  "outlookindia.com": "Outlook",
-  "dnaindia.com": "DNA",
-  "tribuneindia.com": "The Tribune",
-  "thequint.com": "The Quint",
-  "cnbctv18.com": "CNBC-TV18",
-  "businesstoday.in": "Business Today",
-  "techcrunch.com": "TechCrunch",
-  "apnews.com": "AP News",
-  "theguardian.com": "The Guardian",
-  "nytimes.com": "The New York Times",
-  "cnn.com": "CNN",
-  "bloomberg.com": "Bloomberg",
-  "inc42.com": "Inc42",
-};
+// The outlets we recognise by website (lib/outlets.ts, shared with the page).
+
 
 const KNOWN_OUTLET_NAMES = new Set(Object.values(OUTLETS).map(outletKey));
 
