@@ -94,3 +94,37 @@ export type ChatRequest = {
   questionId?: string; // with type "question": a ChatQuestion id
   force?: boolean;
 };
+
+/** A DailyMattr story on a topic near the checked news, for the site's
+ * "related stories" row. */
+export type RelatedPix = {
+  id: string;
+  headline: string;
+  image: string | null;
+  category: string | null;
+  publishedAt: string | null;
+  url: string;
+  excerpt: string;
+  sameStory: boolean;
+};
+
+/** One claim from the checked news and how the sources bear it out:
+ * supported (true), partially-supported (partly true), contradicted (false)
+ * or unsupported (no source reports it). `evidence`: the source's own words. */
+export type PageClaim = {
+  claim: string;
+  verdict: "supported" | "partially-supported" | "contradicted" | "unsupported";
+  evidence: string | null;
+};
+
+/** The home page's fact-check box (/api/nia). */
+export type PageCheck = {
+  reply: ChatReply;
+  /** Real news only: the news told in a few lines. */
+  story: string | null;
+  /** DailyMattr stories on the same or a nearby topic, closest first. Looser
+   * than the chat's list: "what else have we covered around this". */
+  related: RelatedPix[];
+  /** Every checked claim, in the order the news makes them. */
+  claims: PageClaim[];
+};

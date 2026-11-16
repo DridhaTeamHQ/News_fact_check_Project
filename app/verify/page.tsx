@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** The chat used to live here; it is the home page now. */
+/** The chat used to live here; it is at /chat now. */
 export default function VerifyPage() {
-  redirect("/");
+  redirect("/chat");
 }

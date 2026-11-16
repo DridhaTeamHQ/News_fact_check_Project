@@ -11,7 +11,7 @@ import {
   welcomeReply,
   type ChatReply,
 } from "./chat-reply";
-import type { ChatQuestion } from "./chat-text";
+import type { ChatQuestion, PageCheck, PageClaim } from "./chat-text";
 import {
   answerQuestion,
   answerTyped,
@@ -135,6 +135,12 @@ function linkOf(text: string): string | null {
   return /^https?:\/\//i.test(text) ? text : `https://${text}`;
 }
 
+/** The checked claims, for the site's claim-by-claim breakdown. */
+const claimsOf = (claims: { claim: string; verdict: PageClaim["verdict"]; evidence?: string }[]): PageClaim[] =>
+  claims
+    .filter((c) => c.claim.trim())
+    .map((c) => ({ claim: c.claim.trim(), verdict: c.verdict, evidence: c.evidence?.trim() || null }));
+
 const isReal = (label: string) => label === "true" || label === "mostly-true";
 
 /** Check a forward (`text`) or a news link, and save it as `userId`'s current
@@ -145,7 +151,7 @@ async function check(
   text: string,
   link: string | null,
   o: { force?: boolean; userId?: string; messageId?: string },
-): Promise<{ reply: ChatReply; news: CheckContext }> {
+): Promise<{ reply: ChatReply; news: CheckContext; story: string | null; claims: PageClaim[] }> {
   if (link) {
     const report = await checkNews({ url: link, force: o.force });
     // DailyMattr's post on this news: the link's own post, or a match.
@@ -155,7 +161,12 @@ async function check(
     const pix = report.pixId || real ? matched : await relatedToClaim(report.headline, report.verdict.label, matched);
     const saved = rememberLink(link, report, o.userId);
     const story = real ? await tellNews(saved.news) : null;
-    return { reply: withQuestions(linkCheckReply(report, o.messageId, pix, story), saved.questions), news: saved.news };
+    return {
+      reply: withQuestions(linkCheckReply(report, o.messageId, pix, story), saved.questions),
+      news: saved.news,
+      story,
+      claims: claimsOf(report.claims),
+    };
   }
   const checked = (!o.force && getCachedTextCheck(text)) || (await checkText(text));
   const topic = topicOf(checked, text);
@@ -167,7 +178,12 @@ async function check(
   const shown = real ? result : { ...result, pix: await relatedToClaim(result.claim, label, result.pix) };
   const saved = rememberMessage(text, result, o.userId);
   const story = real ? await tellNews(saved.news) : null;
-  return { reply: withQuestions(messageCheckReply(shown, o.messageId, story), saved.questions), news: saved.news };
+  return {
+    reply: withQuestions(messageCheckReply(shown, o.messageId, story), saved.questions),
+    news: saved.news,
+    story,
+    claims: claimsOf(result.report.claims),
+  };
 }
 
 /** `body` is the parsed JSON request. `status` is 200 unless the check itself
@@ -231,5 +247,65 @@ export async function respond(body: unknown): Promise<{ reply: ChatReply; status
     if (err instanceof NewsCheckError && err.status < 500) return ok(errorReply(UNREADABLE_LINK, messageId));
     console.error("[chat]", err);
     return { reply: errorReply(CHECK_FAILED, messageId), status: 502 };
+  }
+}
+
+/* ---------- the website's fact-check box (home page) ---------- */
+
+const RELATED_MAX = 8;
+
+/** The overall verdict, as one claim's verdict. */
+const WHOLE_VERDICT: Record<NonNullable<ChatReply["check"]>["verdict"], PageClaim["verdict"]> = {
+  true: "supported",
+  "mostly-true": "supported",
+  "partly-false": "partially-supported",
+  false: "contradicted",
+  unverified: "unsupported",
+};
+const RELATED_DISTANCE = 0.52; // looser than the chat's 0.47: nearby topics count
+
+/** The fact-check box on the home page: the same check as the chat, plus the
+ * story on its own and a wider list of related DailyMattr stories. */
+export async function checkForPage(body: unknown): Promise<{ result: PageCheck; status: number }> {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const text = typeof b.text === "string" ? b.text.trim() : "";
+  const userId = typeof b.userId === "string" && b.userId.trim() ? b.userId.trim().slice(0, 200) : undefined;
+  const only = (reply: ChatReply, status = 200) => ({ result: { reply, story: null, related: [], claims: [] }, status });
+
+  if (text.length > MAX_LENGTH) return only(errorReply(TOO_LONG));
+  const link = linkOf(text);
+  if (!link && (text.length < MIN_LENGTH || GREETING.test(text))) return only(notNewsReply());
+
+  try {
+    const { reply, story, claims } = await check(text, link, { userId, force: b.force === true });
+    const claim = reply.check?.claim;
+    const lead = reply.check?.dailyMattr?.url;
+    const found = claim ? await matchDailyMattr(claim, undefined, { max: RELATED_MAX + 1, maxDistance: RELATED_DISTANCE }) : [];
+    const related = found
+      .map((p) => ({ p, url: dailyMattrUrl(p) }))
+      .filter((x): x is { p: PixMatch; url: string } => x.url !== null && x.url !== lead)
+      .slice(0, RELATED_MAX)
+      .map(({ p, url }) => ({
+        id: p.id,
+        headline: p.headline,
+        image: p.image,
+        category: p.category,
+        publishedAt: p.published_at,
+        url,
+        excerpt: p.excerpt,
+        sameStory: p.sameStory,
+      }));
+    // A fact-checker's rating can settle the verdict before claims are graded
+    // one by one: then the main claim stands for the whole, with that rating.
+    const shownClaims =
+      claims.length || !reply.check
+        ? claims
+        : [{ claim: reply.check.claim, verdict: WHOLE_VERDICT[reply.check.verdict], evidence: reply.check.reason }];
+    return { result: { reply, story, related, claims: shownClaims }, status: 200 };
+  } catch (err) {
+    if (err instanceof NotNewsError) return only(notNewsReply());
+    if (err instanceof NewsCheckError && err.status < 500) return only(errorReply(UNREADABLE_LINK));
+    console.error("[page check]", err);
+    return only(errorReply(CHECK_FAILED), 502);
   }
 }

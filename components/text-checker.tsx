@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   ArrowUp,
@@ -13,6 +13,7 @@ import {
   SquarePen,
 } from "lucide-react";
 import { PixImage } from "@/components/pix-image";
+import { RichText } from "@/components/rich-text";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   BOT_NAME,
@@ -271,35 +272,6 @@ export function TextChecker() {
       {/* Keeps the welcome and the message box in the middle of the screen */}
       {empty && <div className="flex-[1_1_0]" />}
     </div>
-  );
-}
-
-/* ---------- message text ---------- */
-
-const INLINE = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g;
-
-/** The chat API's light markup: *bold*, _italic_ and ~strike~; blank lines
- * are paragraph breaks. */
-function RichText({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/\n{2,}/).map((para, p) => (
-        <p key={p} className="mt-3 first:mt-0">
-          {para.split("\n").map((line, l) => (
-            <Fragment key={l}>
-              {l > 0 && <br />}
-              {line.split(INLINE).map((part, k) => {
-                const inner = part.slice(1, -1);
-                if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) return <strong key={k}>{inner}</strong>;
-                if (part.length > 2 && part.startsWith("_") && part.endsWith("_")) return <em key={k}>{inner}</em>;
-                if (part.length > 2 && part.startsWith("~") && part.endsWith("~")) return <s key={k}>{inner}</s>;
-                return <Fragment key={k}>{part}</Fragment>;
-              })}
-            </Fragment>
-          ))}
-        </p>
-      ))}
-    </>
   );
 }
 

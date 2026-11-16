@@ -117,7 +117,14 @@ const cosineDistance = (a: number[], b: number[]) => {
   return 1 - dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
 };
 
-async function findPix(apiKey: string, headline: string, keywords: string[]): Promise<{ post: PixPostSummary; d: number }[]> {
+/** `max` / `maxDistance`: how many PIX to keep, and how loosely related they
+ * may be (defaults: the few closest same-topic stories). */
+async function findPix(
+  apiKey: string,
+  headline: string,
+  keywords: string[],
+  { max = MAX_PIX, maxDistance = RELATED }: { max?: number; maxDistance?: number } = {},
+): Promise<{ post: PixPostSummary; d: number }[]> {
   if (!pixConfigured() || keywords.length === 0) return [];
   const lists = await Promise.all(keywords.map((k) => listPixPosts(k, 15).catch(() => [] as PixPostSummary[])));
   const byId = new Map<string, PixPostSummary>();
@@ -138,18 +145,22 @@ async function findPix(apiKey: string, headline: string, keywords: string[]): Pr
     });
   }
   return scored
-    .filter((s) => s.d < RELATED)
+    .filter((s) => s.d < maxDistance)
     .sort((a, b) => a.d - b.d)
-    .slice(0, MAX_PIX);
+    .slice(0, max);
 }
 
 /** DailyMattr PIX on the same news as `headline` (same story first, then
  * related), with the start of each story's text. Searched by `keywords`, or
  * by the headline's key words. Used for checked links. Never throws. */
-export async function matchDailyMattr(headline: string, keywords?: string[]): Promise<PixMatch[]> {
+export async function matchDailyMattr(
+  headline: string,
+  keywords?: string[],
+  opts?: { max?: number; maxDistance?: number },
+): Promise<PixMatch[]> {
   try {
     const terms = keywords?.length ? keywords : significantTokens(headline).slice(0, 4);
-    const found = await findPix(process.env.OPENAI_API_KEY!, headline, terms);
+    const found = await findPix(process.env.OPENAI_API_KEY!, headline, terms, opts);
     const posts = await Promise.all(found.map((f) => getPixPost(f.post.id).catch(() => null)));
     return found.map((f, i) => ({
       ...f.post,

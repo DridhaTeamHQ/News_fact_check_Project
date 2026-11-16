@@ -164,3 +164,94 @@
     radial-gradient(42% 46% at 50% 38%, rgb(57 121 255 / 0.16) 0%, transparent 70%),
     radial-gradient(90% 70% at 50% 0%, #1c1c1f 0%, transparent 65%);
 }
+
+/* ---------- NIA fact check: motion ---------- */
+/* Rise in, as on dailymattr.com (cubic-bezier(.22,1,.36,1)). */
+@keyframes nia-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.nia-rise { animation: nia-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* A finished step's tick pops in. */
+@keyframes nia-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.nia-pop { animation: nia-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Rings that ripple out from NIA's logo while it works. */
+@keyframes nia-ripple {
+  from { transform: scale(0.75); opacity: 0.55; }
+  to { transform: scale(1.6); opacity: 0; }
+}
+.nia-ripple { animation: nia-ripple 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+
+/* The blue arc that orbits the logo. */
+@keyframes nia-orbit { to { transform: rotate(360deg); } }
+.nia-orbit {
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 220deg, #3979ff 320deg, #8db4ff 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation: nia-orbit 1.6s linear infinite;
+}
+
+/* Light sweeping across the current step's words. */
+@keyframes nia-sheen { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.nia-sheen {
+  background: linear-gradient(90deg, var(--foreground) 0%, var(--foreground) 40%, #6b9aff 50%, var(--foreground) 60%, var(--foreground) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: nia-sheen 2.6s linear infinite;
+}
+
+/* Moving light on the progress bar. */
+@keyframes nia-bar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.nia-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+  animation: nia-bar 1.8s ease-in-out infinite;
+}
+
+/* Skeleton lines of the result to come. */
+@keyframes nia-skeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.nia-skeleton {
+  background: linear-gradient(90deg, rgb(127 127 140 / 0.12) 0%, rgb(127 127 140 / 0.26) 50%, rgb(127 127 140 / 0.12) 100%);
+  background-size: 200% 100%;
+  animation: nia-skeleton 1.8s ease-in-out infinite;
+}
+
+/* The verdict's score ring draws itself in. */
+@keyframes nia-draw { from { stroke-dashoffset: var(--nia-ring-length); } }
+.nia-draw { animation: nia-draw 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nia-rise, .nia-pop, .nia-ripple, .nia-orbit, .nia-sheen, .nia-bar::after, .nia-skeleton, .nia-draw {
+    animation: none;
+  }
+  .nia-sheen { color: var(--foreground); background: none; }
+}
+
+/* ---------- NIA fact check: claim highlights ---------- */
+/* A highlighter stroke under each claim, in its verdict's colour. */
+.nia-hl {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  padding: 0 0.15em;
+  border-radius: 0.2em;
+  background: linear-gradient(transparent 55%, var(--nia-hl) 55%);
+}
+.nia-hl-true { --nia-hl: rgb(16 185 129 / 0.22); }
+.nia-hl-partly { --nia-hl: rgb(245 158 11 / 0.26); }
+.nia-hl-false { --nia-hl: rgb(244 63 94 / 0.22); }
+.nia-hl-none { --nia-hl: rgb(113 113 122 / 0.22); }
+.dark .nia-hl-true { --nia-hl: rgb(16 185 129 / 0.28); }
+.dark .nia-hl-partly { --nia-hl: rgb(245 158 11 / 0.3); }
+.dark .nia-hl-false { --nia-hl: rgb(244 63 94 / 0.3); }
+.dark .nia-hl-none { --nia-hl: rgb(161 161 170 / 0.24); }
