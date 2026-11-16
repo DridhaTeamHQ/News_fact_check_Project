@@ -478,6 +478,7 @@ export function NiaCheck() {
             {/* what it checks against */}
             <div className="nia-rise mt-12" style={{ animationDelay: "360ms" }}>
               <p className="text-[10.5px] font-semibold tracking-[2.5px] text-white/35 uppercase">Checked against</p>
+              <style href="nia-halo" precedence="default">{HALO_CSS}</style>
               <ul className="mt-3 flex flex-wrap items-center justify-center gap-2">
                 {TRUST.map((t) => (
                   <li
@@ -535,6 +536,37 @@ const TRUST = [
   { icon: AsianetMark, label: "Asianet's data library" },
   { icon: BadgeCheck, label: "The dailymattr newsroom" },
 ];
+
+/** A chip to draw the eye to: a blue light runs round its border, with a soft
+ *  halo that breathes behind it. Kept here, not in globals.css, so it ships
+ *  with the component even when a deploy reuses a cached stylesheet. */
+const HALO_CSS = `
+@property --nia-halo-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes nia-halo-turn { to { --nia-halo-angle: 360deg; } }
+@keyframes nia-halo {
+  0%, 100% { box-shadow: 0 0 0 1px rgb(57 121 255 / 0.25), 0 0 12px 0 rgb(57 121 255 / 0.18); }
+  50% { box-shadow: 0 0 0 1px rgb(57 121 255 / 0.4), 0 0 22px 2px rgb(57 121 255 / 0.32); }
+}
+.nia-halo { position: relative; isolation: isolate; animation: nia-halo 3s ease-in-out infinite; }
+.nia-halo::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--nia-halo-angle), transparent 0deg, #3979ff 60deg, #b9d0ff 110deg, transparent 180deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: nia-halo-turn 4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nia-halo, .nia-halo::before { animation: none; }
+  .nia-halo { box-shadow: 0 0 0 1px rgb(57 121 255 / 0.4), 0 0 16px 0 rgb(57 121 255 / 0.25); }
+}
+`;
 
 /** Asianet News's striped "A" mark, on a small white tile so its blue and red
  *  read on the dark hero. */
