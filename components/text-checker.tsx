@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import Image from "next/image";
 import {
   ArrowUp,
   Check,
@@ -8,7 +9,6 @@ import {
   ExternalLink,
   ImagePlus,
   Newspaper,
-  Sparkle,
   Square,
   SquarePen,
 } from "lucide-react";
@@ -297,17 +297,21 @@ function RichText({ text }: { text: string }) {
 
 /* ---------- messages ---------- */
 
-/** NIA's logo: a white four-point star on a blue-to-violet disc. */
+/** NIA's logo (public/nia_logo.png): a white four-point star on a blue disc.
+ * The file has a soft glow around the disc, so the disc is only about half
+ * of the picture. The picture is scaled up to make the disc fill the avatar,
+ * and the glow spills out around it like a shadow. */
 function BotAvatar({ large = false }: { large?: boolean }) {
   return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-linear-to-br from-[#3d94f6] to-[#7a55ee] text-white",
-        large ? "size-14 shadow-lg shadow-[#5b76f2]/35" : "size-7 shadow-sm shadow-[#5b76f2]/40",
-      )}
-      aria-hidden
-    >
-      <Sparkle className={cn("fill-current", large ? "size-7" : "size-3.5")} />
+    <span className={cn("block shrink-0", large ? "size-14" : "size-7")} aria-hidden>
+      <Image
+        src="/nia_logo.png"
+        alt=""
+        width={198}
+        height={198}
+        loading="eager"
+        className="pointer-events-none size-full max-w-none scale-[1.94] select-none"
+      />
     </span>
   );
 }

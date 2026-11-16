@@ -223,7 +223,7 @@ export function notNewsReply(replyTo?: string): ChatReply {
     kind: "not-news",
     messages: [
       message(
-        "🤔 I couldn't find any news in that to check.\n\nForward me a message that says something *happened*, or send a news link, and I'll tell you if it's true or false.",
+        "📰 *I can only check news*\n\nThat doesn't look like a news claim. Send me a news headline or story, or paste a news link, and I'll tell you if it's *true or false*.",
         [],
         replyTo,
       ),
