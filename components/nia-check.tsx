@@ -534,7 +534,7 @@ const EXAMPLES = [
 const TRUST = [
   { icon: Newspaper, label: "Trusted news outlets" },
   // BOOM, Alt News, PIB Fact Check, AFP… (lib/fact-checks.ts)
-  { icon: ShieldCheck, label: "dailymattr's fact-checkers", glow: true },
+  { icon: ShieldCheck, label: "dailymattr's fact-checker", glow: true },
   { icon: BadgeCheck, label: "The dailymattr newsroom" },
 ];
 
