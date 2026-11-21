@@ -485,10 +485,10 @@ export function NiaCheck() {
                     key={t.label}
                     className={cn(
                       "flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[13px] text-white/70 backdrop-blur-sm",
-                      t.icon === AsianetMark && "nia-halo text-white/90",
+                      t.glow && "nia-halo text-white/90",
                     )}
                   >
-                    <t.icon className={cn("text-[#6b9aff]", t.icon === AsianetMark ? "size-5" : "size-4")} aria-hidden />
+                    <t.icon className="size-4 text-[#6b9aff]" aria-hidden />
                     {t.label}
                   </li>
                 ))}
@@ -533,7 +533,8 @@ const EXAMPLES = [
 
 const TRUST = [
   { icon: Newspaper, label: "Trusted news outlets" },
-  { icon: AsianetMark, label: "Asianet's data library" },
+  // BOOM, Alt News, PIB Fact Check, AFP… (lib/fact-checks.ts)
+  { icon: ShieldCheck, label: "Leading fact-checkers", glow: true },
   { icon: BadgeCheck, label: "The dailymattr newsroom" },
 ];
 
@@ -567,16 +568,6 @@ const HALO_CSS = `
   .nia-halo { box-shadow: 0 0 0 1px rgb(57 121 255 / 0.4), 0 0 16px 0 rgb(57 121 255 / 0.25); }
 }
 `;
-
-/** Asianet News's striped "A" mark, on a small white tile so its blue and red
- *  read on the dark hero. */
-function AsianetMark({ className, ...rest }: { className?: string; "aria-hidden"?: boolean }) {
-  return (
-    <span {...rest} className={cn("grid shrink-0 place-items-center rounded-[5px] bg-white p-[2px]", className)}>
-      <Image src="/asianet-mark.svg" alt="" width={28} height={20} className="h-auto w-full" />
-    </span>
-  );
-}
 
 /** The hero's changing word, in a dark pill as on dailymattr.com. */
 const WORDS = ["news", "forward", "link", "headline", "rumour"];
